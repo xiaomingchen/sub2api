@@ -43,7 +43,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/wei-shaw/sub2api
+          images: ghcr.io/${{ github.repository_owner }}/sub2api
           tags: |
             type=ref,event=branch
             type=ref,event=tag
@@ -69,4 +69,3 @@ jobs:
             DATE=${{ steps.meta.outputs.created }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
