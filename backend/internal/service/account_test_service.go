@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Wei-Shaw/sub2api/internal/config"
@@ -519,6 +520,11 @@ func (s *AccountTestService) testOpenAIAccountConnection(c *gin.Context, account
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
+		// Keep admin test behavior aligned with the gateway: a 429 should
+		// immediately update the account's rate-limit state when we can parse it.
+		if resp.StatusCode == http.StatusTooManyRequests && s.accountRepo != nil {
+			(&RateLimitService{accountRepo: s.accountRepo}).handle429(ctx, account, resp.Header, body)
+		}
 		// 401 Unauthorized: 标记账号为永久错误
 		if resp.StatusCode == http.StatusUnauthorized && s.accountRepo != nil {
 			errMsg := fmt.Sprintf("Authentication failed (401): %s", string(body))
@@ -1073,6 +1079,70 @@ func (s *AccountTestService) RunTestBackground(ctx context.Context, accountID in
 		StartedAt:    startedAt,
 		FinishedAt:   finishedAt,
 	}, nil
+}
+
+// BatchTestAccountResult captures the outcome of one account in a batch test run.
+type BatchTestAccountResult struct {
+	AccountID    int64  `json:"account_id"`
+	Status       string `json:"status"`
+	ErrorMessage string `json:"error_message,omitempty"`
+	Warning      string `json:"warning,omitempty"`
+	LatencyMs    int64  `json:"latency_ms"`
+}
+
+// RunBatchTests executes multiple account tests with a bounded level of concurrency.
+func (s *AccountTestService) RunBatchTests(
+	ctx context.Context,
+	accountIDs []int64,
+	modelID string,
+	afterSuccess func(context.Context, int64) error,
+) ([]BatchTestAccountResult, error) {
+	if len(accountIDs) == 0 {
+		return nil, errors.New("account_ids is required")
+	}
+
+	const maxConcurrency = 5
+	results := make([]BatchTestAccountResult, len(accountIDs))
+
+	sem := make(chan struct{}, maxConcurrency)
+	var wg sync.WaitGroup
+
+	for i, accountID := range accountIDs {
+		i := i
+		accountID := accountID
+		sem <- struct{}{}
+		wg.Add(1)
+
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			testResult, err := s.RunTestBackground(ctx, accountID, modelID)
+			batchResult := BatchTestAccountResult{AccountID: accountID}
+			if testResult != nil {
+				batchResult.Status = testResult.Status
+				batchResult.ErrorMessage = testResult.ErrorMessage
+				batchResult.LatencyMs = testResult.LatencyMs
+			} else {
+				batchResult.Status = "failed"
+			}
+			if err != nil {
+				batchResult.Status = "failed"
+				batchResult.ErrorMessage = err.Error()
+			}
+
+			if batchResult.Status == "success" && afterSuccess != nil {
+				if recoverErr := afterSuccess(ctx, accountID); recoverErr != nil {
+					batchResult.Warning = recoverErr.Error()
+				}
+			}
+
+			results[i] = batchResult
+		}()
+	}
+
+	wg.Wait()
+	return results, nil
 }
 
 // parseTestSSEOutput extracts response text and error message from captured SSE output.

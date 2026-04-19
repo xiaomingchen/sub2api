@@ -2,15 +2,17 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import AccountTestModal from '../AccountTestModal.vue'
 
-const { getAvailableModels, copyToClipboard } = vi.hoisted(() => ({
+const { getAvailableModels, getById, copyToClipboard } = vi.hoisted(() => ({
   getAvailableModels: vi.fn(),
+  getById: vi.fn(),
   copyToClipboard: vi.fn()
 }))
 
 vi.mock('@/api/admin', () => ({
   adminAPI: {
     accounts: {
-      getAvailableModels
+      getAvailableModels,
+      getById
     }
   }
 }))
@@ -93,6 +95,13 @@ describe('AccountTestModal', () => {
       { id: 'gemini-2.5-flash-image', display_name: 'Gemini 2.5 Flash Image' },
       { id: 'gemini-3.1-flash-image', display_name: 'Gemini 3.1 Flash Image' }
     ])
+    getById.mockResolvedValue({
+      id: 42,
+      name: 'Gemini Image Test',
+      platform: 'gemini',
+      type: 'apikey',
+      status: 'active'
+    })
     copyToClipboard.mockReset()
     Object.defineProperty(globalThis, 'localStorage', {
       value: {
@@ -138,6 +147,11 @@ describe('AccountTestModal', () => {
     expect(JSON.parse(request.body)).toEqual({
       model_id: 'gemini-3.1-flash-image',
       prompt: 'draw a tiny orange cat astronaut'
+    })
+    expect(getById).toHaveBeenCalledWith(42)
+    expect(wrapper.emitted('updated')?.[0]?.[0]).toMatchObject({
+      id: 42,
+      status: 'active'
     })
 
     const preview = wrapper.find('img[alt="gemini-test-image-1"]')

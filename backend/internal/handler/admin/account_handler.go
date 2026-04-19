@@ -654,6 +654,11 @@ type TestAccountRequest struct {
 	Prompt  string `json:"prompt"`
 }
 
+type BatchTestAccountsRequest struct {
+	AccountIDs []int64 `json:"account_ids" binding:"required,min=1"`
+	ModelID    string  `json:"model_id"`
+}
+
 type SyncFromCRSRequest struct {
 	BaseURL            string   `json:"base_url" binding:"required"`
 	Username           string   `json:"username" binding:"required"`
@@ -692,6 +697,101 @@ func (h *AccountHandler) Test(c *gin.Context) {
 			_ = c.Error(err)
 		}
 	}
+}
+
+// BatchTest handles testing multiple accounts in one request.
+// POST /api/v1/admin/accounts/batch-test
+func (h *AccountHandler) BatchTest(c *gin.Context) {
+	if h.adminService == nil || h.accountTestService == nil {
+		response.Error(c, http.StatusServiceUnavailable, "Account test service unavailable")
+		return
+	}
+
+	var req BatchTestAccountsRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if len(req.AccountIDs) == 0 {
+		response.BadRequest(c, "account_ids is required")
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	accounts, err := h.adminService.GetAccountsByIDs(ctx, req.AccountIDs)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	foundIDs := make(map[int64]bool, len(accounts))
+	for _, account := range accounts {
+		if account != nil {
+			foundIDs[account.ID] = true
+		}
+	}
+
+	existingIDs := make([]int64, 0, len(accounts))
+	successCount := 0
+	failedCount := 0
+	var errors []gin.H
+	var warnings []gin.H
+
+	for _, id := range req.AccountIDs {
+		if foundIDs[id] {
+			existingIDs = append(existingIDs, id)
+			continue
+		}
+		failedCount++
+		errors = append(errors, gin.H{
+			"account_id": id,
+			"error":      "account not found",
+		})
+	}
+
+	if len(existingIDs) > 0 {
+		results, err := h.accountTestService.RunBatchTests(ctx, existingIDs, req.ModelID, func(ctx context.Context, accountID int64) error {
+			if h.rateLimitService == nil {
+				return nil
+			}
+			_, err := h.rateLimitService.RecoverAccountAfterSuccessfulTest(ctx, accountID)
+			return err
+		})
+		if err != nil {
+			response.ErrorFrom(c, err)
+			return
+		}
+
+		for _, result := range results {
+			if result.Status == "success" {
+				successCount++
+			} else {
+				failedCount++
+				if result.ErrorMessage == "" {
+					result.ErrorMessage = "Test failed"
+				}
+				errors = append(errors, gin.H{
+					"account_id": result.AccountID,
+					"error":      result.ErrorMessage,
+				})
+			}
+			if result.Warning != "" {
+				warnings = append(warnings, gin.H{
+					"account_id": result.AccountID,
+					"warning":    result.Warning,
+				})
+			}
+		}
+	}
+
+	response.Success(c, gin.H{
+		"total":    len(req.AccountIDs),
+		"success":  successCount,
+		"failed":   failedCount,
+		"errors":   errors,
+		"warnings": warnings,
+	})
 }
 
 // RecoverState handles unified recovery of recoverable account runtime state.

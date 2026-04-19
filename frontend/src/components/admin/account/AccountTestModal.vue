@@ -237,6 +237,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'close'): void
+  (e: 'updated', account: Account): void
 }>()
 
 const terminalRef = ref<HTMLElement | null>(null)
@@ -351,6 +352,16 @@ const scrollToBottom = async () => {
   }
 }
 
+const refreshAccountAfterTest = async () => {
+  if (!props.account) return
+  try {
+    const updatedAccount = await adminAPI.accounts.getById(props.account.id)
+    emit('updated', updatedAccount)
+  } catch (error) {
+    console.error('Failed to refresh account after test:', error)
+  }
+}
+
 const startTest = async () => {
   if (!props.account || !selectedModelId.value) return
 
@@ -416,6 +427,8 @@ const startTest = async () => {
         }
       }
     }
+
+    await refreshAccountAfterTest()
   } catch (error: unknown) {
     if (error instanceof DOMException && error.name === 'AbortError') {
       status.value = 'idle'
