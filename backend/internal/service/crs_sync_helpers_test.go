@@ -110,3 +110,19 @@ func TestShouldCreateAccount(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeBaseURLAllowsHTTPWhenConfigured(t *testing.T) {
+	normalized, err := normalizeBaseURL("http://example.com/", []string{"example.com"}, true, true)
+	if err != nil {
+		t.Fatalf("expected http base_url to pass when allow_insecure_http is true, got %v", err)
+	}
+	if normalized != "http://example.com" {
+		t.Fatalf("expected normalized url without trailing slash, got %q", normalized)
+	}
+}
+
+func TestNormalizeBaseURLRejectsHTTPByDefault(t *testing.T) {
+	if _, err := normalizeBaseURL("http://example.com", []string{"example.com"}, true, false); err == nil {
+		t.Fatalf("expected http base_url to be rejected when allow_insecure_http is false")
+	}
+}

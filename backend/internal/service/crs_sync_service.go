@@ -199,7 +199,12 @@ func (s *CRSSyncService) fetchCRSExport(ctx context.Context, baseURL, username, 
 	}
 	normalizedURL := strings.TrimSpace(baseURL)
 	if s.cfg.Security.URLAllowlist.Enabled {
-		normalized, err := normalizeBaseURL(normalizedURL, s.cfg.Security.URLAllowlist.CRSHosts, s.cfg.Security.URLAllowlist.AllowPrivateHosts)
+		normalized, err := normalizeBaseURL(
+			normalizedURL,
+			s.cfg.Security.URLAllowlist.CRSHosts,
+			s.cfg.Security.URLAllowlist.AllowPrivateHosts,
+			s.cfg.Security.URLAllowlist.AllowInsecureHTTP,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -1119,10 +1124,10 @@ func mapCRSStatus(isActive bool, status string) string {
 	return "active"
 }
 
-func normalizeBaseURL(raw string, allowlist []string, allowPrivate bool) (string, error) {
+func normalizeBaseURL(raw string, allowlist []string, allowPrivate, allowInsecureHTTP bool) (string, error) {
 	// 当 allowlist 为空时，不强制要求白名单（只进行基本的 URL 和 SSRF 验证）
 	requireAllowlist := len(allowlist) > 0
-	normalized, err := urlvalidator.ValidateHTTPSURL(raw, urlvalidator.ValidationOptions{
+	normalized, err := urlvalidator.ValidateHTTPURL(raw, allowInsecureHTTP, urlvalidator.ValidationOptions{
 		AllowedHosts:     allowlist,
 		RequireAllowlist: requireAllowlist,
 		AllowPrivate:     allowPrivate,

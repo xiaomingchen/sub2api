@@ -1420,6 +1420,27 @@ func TestOpenAIValidateUpstreamBaseURLEnabledEnforcesAllowlist(t *testing.T) {
 	}
 }
 
+func TestOpenAIValidateUpstreamBaseURLEnabledAllowsHTTPWhenConfigured(t *testing.T) {
+	cfg := &config.Config{
+		Security: config.SecurityConfig{
+			URLAllowlist: config.URLAllowlistConfig{
+				Enabled:           true,
+				UpstreamHosts:     []string{"example.com"},
+				AllowInsecureHTTP: true,
+			},
+		},
+	}
+	svc := &OpenAIGatewayService{cfg: cfg}
+
+	normalized, err := svc.validateUpstreamBaseURL("http://example.com")
+	if err != nil {
+		t.Fatalf("expected http allowlisted host to pass when allow_insecure_http is true, got %v", err)
+	}
+	if normalized != "http://example.com" {
+		t.Fatalf("expected normalized http url, got %q", normalized)
+	}
+}
+
 func TestOpenAIUpdateCodexUsageSnapshotFromHeaders(t *testing.T) {
 	repo := &snapshotUpdateAccountRepo{updateExtraCalls: make(chan map[string]any, 1)}
 	svc := &OpenAIGatewayService{accountRepo: repo}
