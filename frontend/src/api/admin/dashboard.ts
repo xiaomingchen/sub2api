@@ -298,6 +298,20 @@ export interface BatchApiKeysUsageResponse {
   stats: Record<string, BatchApiKeyUsageStats>
 }
 
+export interface AccountConsumptionItem {
+  account_id: number
+  account_name: string
+  requests: number
+  total_tokens: number
+  account_cost: number
+}
+
+export interface AccountConsumptionResponse {
+  accounts: AccountConsumptionItem[]
+  start_date: string
+  end_date: string
+}
+
 /**
  * Get batch usage stats for multiple API keys
  * @param apiKeyIds - Array of API key IDs
@@ -315,6 +329,13 @@ export async function getBatchApiKeysUsage(
   return data
 }
 
+export async function getAccountConsumption(params?: Pick<TrendParams, 'start_date' | 'end_date'>): Promise<AccountConsumptionResponse> {
+  const { data } = await apiClient.get<AccountConsumptionResponse>('/admin/dashboard/accounts', {
+    params
+  })
+  return data
+}
+
 export const dashboardAPI = {
   getStats,
   getRealtimeMetrics,
@@ -326,7 +347,8 @@ export const dashboardAPI = {
   getUserUsageTrend,
   getUserSpendingRanking,
   getBatchUsersUsage,
-  getBatchApiKeysUsage
+  getBatchApiKeysUsage,
+  getAccountConsumption
 }
 
 export default dashboardAPI

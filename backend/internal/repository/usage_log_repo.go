@@ -2850,6 +2850,56 @@ func (r *usageLogRepository) GetBatchAPIKeyUsageStats(ctx context.Context, apiKe
 	return result, nil
 }
 
+// GetAccountConsumption aggregates usage metrics by account within the time range.
+func (r *usageLogRepository) GetAccountConsumption(ctx context.Context, startTime, endTime time.Time) (results []usagestats.AccountConsumptionItem, err error) {
+	// Keep the same default window convention as other dashboard aggregations.
+	if startTime.IsZero() {
+		startTime = time.Now().AddDate(0, 0, -30)
+	}
+	if endTime.IsZero() {
+		endTime = time.Now()
+	}
+
+	rows, err := r.sql.QueryContext(ctx, `
+		SELECT
+			u.account_id,
+			COALESCE(a.name, '#' || u.account_id::text) AS account_name,
+			COUNT(*) AS requests,
+			COALESCE(SUM(u.input_tokens + u.output_tokens + u.cache_creation_tokens + u.cache_read_tokens), 0) AS total_tokens,
+			COALESCE(SUM(COALESCE(u.account_stats_cost, u.total_cost) * COALESCE(u.account_rate_multiplier, 1)), 0) AS account_cost
+		FROM usage_logs u
+		LEFT JOIN accounts a ON a.id = u.account_id
+		WHERE u.created_at >= $1
+		  AND u.created_at < $2
+		  AND u.account_id > 0
+		GROUP BY u.account_id, a.name
+		ORDER BY account_cost DESC, total_tokens DESC, u.account_id ASC
+	`, startTime, endTime)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if closeErr := rows.Close(); closeErr != nil && err == nil {
+			err = closeErr
+			results = nil
+		}
+	}()
+
+	results = make([]usagestats.AccountConsumptionItem, 0)
+	for rows.Next() {
+		var item usagestats.AccountConsumptionItem
+		if err = rows.Scan(&item.AccountID, &item.AccountName, &item.Requests, &item.TotalTokens, &item.AccountCost); err != nil {
+			return nil, err
+		}
+		results = append(results, item)
+	}
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return results, nil
+}
+
 // GetUsageTrendWithFilters returns usage trend data with optional filters
 func (r *usageLogRepository) GetUsageTrendWithFilters(ctx context.Context, startTime, endTime time.Time, granularity string, userID, apiKeyID, accountID, groupID int64, model string, requestType *int16, stream *bool, billingType *int8) (results []TrendDataPoint, err error) {
 	if shouldUsePreaggregatedTrend(granularity, userID, apiKeyID, accountID, groupID, model, requestType, stream, billingType) {

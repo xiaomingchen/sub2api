@@ -344,7 +344,7 @@ type AdminRedeemCode struct {
 	Notes string `json:"notes"`
 }
 
-// UsageLog 是普通用户接口使用的 usage log DTO（不包含管理员字段）。
+// UsageLog 是普通用户接口使用的 usage log DTO（不包含管理员敏感字段）。
 type UsageLog struct {
 	ID        int64  `json:"id"`
 	UserID    int64  `json:"user_id"`
@@ -406,6 +406,7 @@ type UsageLog struct {
 
 	User         *User             `json:"user,omitempty"`
 	APIKey       *APIKey           `json:"api_key,omitempty"`
+	Account      *AccountSummary   `json:"account,omitempty"`
 	Group        *Group            `json:"group,omitempty"`
 	Subscription *UserSubscription `json:"subscription,omitempty"`
 }
@@ -432,9 +433,6 @@ type AdminUsageLog struct {
 
 	// IPAddress 用户请求 IP（仅管理员可见）
 	IPAddress *string `json:"ip_address,omitempty"`
-
-	// Account 最小账号信息（避免泄露敏感字段）
-	Account *AccountSummary `json:"account,omitempty"`
 }
 
 type UsageCleanupFilters struct {

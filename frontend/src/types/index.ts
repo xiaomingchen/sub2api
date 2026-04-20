@@ -1052,6 +1052,7 @@ export interface UsageLog {
 
   user?: User
   api_key?: ApiKey
+  account?: UsageLogAccountSummary
   group?: Group
   subscription?: UserSubscription
 }
@@ -1077,8 +1078,6 @@ export interface AdminUsageLog extends UsageLog {
   // 用户请求 IP（仅管理员可见）
   ip_address?: string | null
 
-  // 最小账号信息（仅管理员接口返回）
-  account?: UsageLogAccountSummary
 }
 
 export interface UsageCleanupFilters {

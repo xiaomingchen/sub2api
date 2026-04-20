@@ -388,3 +388,20 @@ func (s *DashboardService) GetBatchAPIKeyUsageStats(ctx context.Context, apiKeyI
 	}
 	return stats, nil
 }
+
+func (s *DashboardService) GetAccountConsumption(ctx context.Context, startTime, endTime time.Time) ([]usagestats.AccountConsumptionItem, error) {
+	type accountConsumptionRepo interface {
+		GetAccountConsumption(ctx context.Context, startTime, endTime time.Time) ([]usagestats.AccountConsumptionItem, error)
+	}
+
+	repo, ok := s.usageRepo.(accountConsumptionRepo)
+	if !ok {
+		return nil, errors.New("account consumption aggregation not supported")
+	}
+
+	items, err := repo.GetAccountConsumption(ctx, startTime, endTime)
+	if err != nil {
+		return nil, fmt.Errorf("get account consumption: %w", err)
+	}
+	return items, nil
+}

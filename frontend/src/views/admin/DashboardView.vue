@@ -286,6 +286,51 @@
               </div>
             </div>
           </div>
+
+          <!-- Account Consumption Table -->
+          <div class="card p-4">
+            <h3 class="mb-4 text-sm font-semibold text-gray-900 dark:text-white">
+              {{ t('admin.dashboard.accounts') }} {{ t('usage.title') }}
+            </h3>
+            <div v-if="accountConsumptionLoading" class="flex h-40 items-center justify-center">
+              <LoadingSpinner size="md" />
+            </div>
+            <div v-else-if="accountConsumptionRows.length === 0" class="flex h-40 items-center justify-center text-sm text-gray-500 dark:text-gray-400">
+              {{ t('admin.dashboard.noDataAvailable') }}
+            </div>
+            <div v-else class="overflow-x-auto">
+              <table class="min-w-full text-sm">
+                <thead>
+                  <tr class="border-b border-gray-200 text-left text-xs uppercase tracking-wide text-gray-500 dark:border-gray-700 dark:text-gray-400">
+                    <th class="px-2 py-2.5">{{ t('admin.usage.account') }}</th>
+                    <th class="px-2 py-2.5 text-right">{{ t('usage.totalRequests') }}</th>
+                    <th class="px-2 py-2.5 text-right">{{ t('usage.totalTokens') }}</th>
+                    <th class="px-2 py-2.5 text-right">{{ t('usage.accountBilled') }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="item in accountConsumptionRows"
+                    :key="item.account_id"
+                    class="border-b border-gray-100 last:border-b-0 dark:border-gray-800"
+                  >
+                    <td class="px-2 py-2.5 font-medium text-gray-900 dark:text-white">
+                      {{ item.account_name || `#${item.account_id}` }}
+                    </td>
+                    <td class="px-2 py-2.5 text-right text-gray-700 dark:text-gray-300">
+                      {{ formatNumber(item.requests) }}
+                    </td>
+                    <td class="px-2 py-2.5 text-right text-gray-700 dark:text-gray-300">
+                      {{ formatTokens(item.total_tokens) }}
+                    </td>
+                    <td class="px-2 py-2.5 text-right font-semibold text-green-600 dark:text-green-400">
+                      ${{ formatCost(item.account_cost) }}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
       </template>
     </div>
@@ -300,6 +345,7 @@ import { useAppStore } from '@/stores/app'
 
 const { t } = useI18n()
 import { adminAPI } from '@/api/admin'
+import type { AccountConsumptionItem } from '@/api/admin/dashboard'
 import type {
   DashboardStats,
   TrendDataPoint,
@@ -355,10 +401,23 @@ const rankingItems = ref<UserSpendingRankingItem[]>([])
 const rankingTotalActualCost = ref(0)
 const rankingTotalRequests = ref(0)
 const rankingTotalTokens = ref(0)
+const accountConsumption = ref<AccountConsumptionItem[]>([])
+const accountConsumptionLoading = ref(false)
 let chartLoadSeq = 0
 let usersTrendLoadSeq = 0
 let rankingLoadSeq = 0
+let accountConsumptionLoadSeq = 0
 const rankingLimit = 12
+
+const accountConsumptionRows = computed(() =>
+  [...accountConsumption.value].sort((a, b) => {
+    const byCost = b.account_cost - a.account_cost
+    if (byCost !== 0) return byCost
+    const byTokens = b.total_tokens - a.total_tokens
+    if (byTokens !== 0) return byTokens
+    return a.account_id - b.account_id
+  })
+)
 
 // Helper function to format date in local timezone
 const formatLocalDate = (date: Date): string => {
@@ -676,11 +735,33 @@ const loadUserSpendingRanking = async () => {
   }
 }
 
+const loadAccountConsumption = async () => {
+  const currentSeq = ++accountConsumptionLoadSeq
+  accountConsumptionLoading.value = true
+  try {
+    const response = await adminAPI.dashboard.getAccountConsumption({
+      start_date: startDate.value,
+      end_date: endDate.value
+    })
+    if (currentSeq !== accountConsumptionLoadSeq) return
+    accountConsumption.value = response.accounts || []
+  } catch (error) {
+    if (currentSeq !== accountConsumptionLoadSeq) return
+    console.error('Error loading account consumption:', error)
+    accountConsumption.value = []
+  } finally {
+    if (currentSeq === accountConsumptionLoadSeq) {
+      accountConsumptionLoading.value = false
+    }
+  }
+}
+
 const loadDashboardStats = async () => {
   await Promise.all([
     loadDashboardSnapshot(true),
     loadUsersTrend(),
-    loadUserSpendingRanking()
+    loadUserSpendingRanking(),
+    loadAccountConsumption()
   ])
 }
 
@@ -688,7 +769,8 @@ const loadChartData = async () => {
   await Promise.all([
     loadDashboardSnapshot(false),
     loadUsersTrend(),
-    loadUserSpendingRanking()
+    loadUserSpendingRanking(),
+    loadAccountConsumption()
   ])
 }
 

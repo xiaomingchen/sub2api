@@ -16,15 +16,16 @@ import (
 
 type usageRepoStub struct {
 	UsageLogRepository
-	stats      *usagestats.DashboardStats
-	rangeStats *usagestats.DashboardStats
-	err        error
-	rangeErr   error
-	calls      int32
-	rangeCalls int32
-	rangeStart time.Time
-	rangeEnd   time.Time
-	onCall     chan struct{}
+	stats              *usagestats.DashboardStats
+	rangeStats         *usagestats.DashboardStats
+	accountConsumption []usagestats.AccountConsumptionItem
+	err                error
+	rangeErr           error
+	calls              int32
+	rangeCalls         int32
+	rangeStart         time.Time
+	rangeEnd           time.Time
+	onCall             chan struct{}
 }
 
 func (s *usageRepoStub) GetDashboardStats(ctx context.Context) (*usagestats.DashboardStats, error) {
@@ -52,6 +53,10 @@ func (s *usageRepoStub) GetDashboardStatsWithRange(ctx context.Context, start, e
 		return s.rangeStats, nil
 	}
 	return s.stats, nil
+}
+
+func (s *usageRepoStub) GetAccountConsumption(ctx context.Context, startTime, endTime time.Time) ([]usagestats.AccountConsumptionItem, error) {
+	return s.accountConsumption, nil
 }
 
 type dashboardCacheStub struct {
@@ -180,6 +185,27 @@ func TestDashboardService_CacheHitFresh(t *testing.T) {
 	require.Equal(t, int32(0), atomic.LoadInt32(&repo.calls))
 	require.Equal(t, int32(1), atomic.LoadInt32(&cache.getCalls))
 	require.Equal(t, int32(0), atomic.LoadInt32(&cache.setCalls))
+}
+
+func TestDashboardService_GetAccountConsumption(t *testing.T) {
+	repo := &usageRepoStub{
+		accountConsumption: []usagestats.AccountConsumptionItem{
+			{
+				AccountID:   1,
+				AccountName: "acc-1",
+				Requests:    2,
+				TotalTokens: 300,
+				AccountCost: 1.2,
+			},
+		},
+	}
+	svc := NewDashboardService(repo, nil, nil, nil)
+
+	start := time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+	got, err := svc.GetAccountConsumption(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Equal(t, repo.accountConsumption, got)
 }
 
 func TestDashboardService_CacheMiss_StoresCache(t *testing.T) {

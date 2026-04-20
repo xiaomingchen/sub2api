@@ -467,6 +467,30 @@ func TestUsageLogRepositoryGetUserSpendingRanking(t *testing.T) {
 	require.NoError(t, mock.ExpectationsWereMet())
 }
 
+func TestUsageLogRepositoryGetAccountConsumption(t *testing.T) {
+	db, mock := newSQLMock(t)
+	repo := &usageLogRepository{sql: db}
+
+	start := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	end := start.Add(24 * time.Hour)
+
+	rows := sqlmock.NewRows([]string{"account_id", "account_name", "requests", "total_tokens", "account_cost"}).
+		AddRow(int64(11), "acc-main", int64(10), int64(5000), 12.34).
+		AddRow(int64(12), "acc-backup", int64(5), int64(2500), 4.56)
+
+	mock.ExpectQuery("FROM usage_logs u").
+		WithArgs(start, end).
+		WillReturnRows(rows)
+
+	got, err := repo.GetAccountConsumption(context.Background(), start, end)
+	require.NoError(t, err)
+	require.Equal(t, []usagestats.AccountConsumptionItem{
+		{AccountID: 11, AccountName: "acc-main", Requests: 10, TotalTokens: 5000, AccountCost: 12.34},
+		{AccountID: 12, AccountName: "acc-backup", Requests: 5, TotalTokens: 2500, AccountCost: 4.56},
+	}, got)
+	require.NoError(t, mock.ExpectationsWereMet())
+}
+
 func TestBuildRequestTypeFilterConditionLegacyFallback(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -148,6 +148,30 @@ func TestUsageLogFromService_FallsBackToLegacyModelWhenRequestedModelMissing(t *
 	require.Equal(t, "claude-3", adminDTO.Model)
 }
 
+func TestUsageLogFromService_IncludesAccountSummaryForUserAndAdmin(t *testing.T) {
+	t.Parallel()
+
+	log := &service.UsageLog{
+		RequestID: "req-account",
+		Model:     "gpt-5",
+		Account: &service.Account{
+			ID:   42,
+			Name: "acc-prod-01",
+		},
+	}
+
+	userDTO := UsageLogFromService(log)
+	adminDTO := UsageLogFromServiceAdmin(log)
+
+	require.NotNil(t, userDTO.Account)
+	require.Equal(t, int64(42), userDTO.Account.ID)
+	require.Equal(t, "acc-prod-01", userDTO.Account.Name)
+
+	require.NotNil(t, adminDTO.Account)
+	require.Equal(t, int64(42), adminDTO.Account.ID)
+	require.Equal(t, "acc-prod-01", adminDTO.Account.Name)
+}
+
 func f64Ptr(value float64) *float64 {
 	return &value
 }

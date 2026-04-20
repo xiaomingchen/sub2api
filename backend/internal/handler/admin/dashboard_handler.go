@@ -478,6 +478,7 @@ type BatchUsersUsageRequest struct {
 var dashboardUsersRankingCache = newSnapshotCache(5 * time.Minute)
 var dashboardBatchUsersUsageCache = newSnapshotCache(30 * time.Second)
 var dashboardBatchAPIKeysUsageCache = newSnapshotCache(30 * time.Second)
+var dashboardAccountConsumptionCache = newSnapshotCache(30 * time.Second)
 
 func parseRankingLimit(raw string) int {
 	limit, err := strconv.Atoi(strings.TrimSpace(raw))
@@ -610,6 +611,41 @@ func (h *DashboardHandler) GetBatchAPIKeysUsage(c *gin.Context) {
 
 	payload := gin.H{"stats": stats}
 	dashboardBatchAPIKeysUsageCache.Set(cacheKey, payload)
+	c.Header("X-Snapshot-Cache", "miss")
+	response.Success(c, payload)
+}
+
+// GetAccountConsumption handles aggregated account consumption stats in a time range.
+// GET /api/v1/admin/dashboard/accounts
+func (h *DashboardHandler) GetAccountConsumption(c *gin.Context) {
+	startTime, endTime := parseTimeRange(c)
+
+	keyRaw, _ := json.Marshal(struct {
+		Start string `json:"start"`
+		End   string `json:"end"`
+	}{
+		Start: startTime.UTC().Format(time.RFC3339),
+		End:   endTime.UTC().Format(time.RFC3339),
+	})
+	cacheKey := string(keyRaw)
+	if cached, ok := dashboardAccountConsumptionCache.Get(cacheKey); ok {
+		c.Header("X-Snapshot-Cache", "hit")
+		response.Success(c, cached.Payload)
+		return
+	}
+
+	items, err := h.dashboardService.GetAccountConsumption(c.Request.Context(), startTime, endTime)
+	if err != nil {
+		response.Error(c, 500, "Failed to get account consumption")
+		return
+	}
+
+	payload := gin.H{
+		"accounts":   items,
+		"start_date": startTime.Format("2006-01-02"),
+		"end_date":   endTime.Add(-24 * time.Hour).Format("2006-01-02"),
+	}
+	dashboardAccountConsumptionCache.Set(cacheKey, payload)
 	c.Header("X-Snapshot-Cache", "miss")
 	response.Success(c, payload)
 }
