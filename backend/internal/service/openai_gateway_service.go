@@ -1336,6 +1336,7 @@ func (s *OpenAIGatewayService) selectBestAccount(ctx context.Context, groupID *i
 		if fresh == nil {
 			continue
 		}
+		fresh = fresh.CloneWithEffectivePriority(groupID)
 		if needsUpstreamCheck && s.isUpstreamModelRestrictedByChannel(ctx, *groupID, fresh, requestedModel) {
 			continue
 		}
@@ -1491,7 +1492,7 @@ func (s *OpenAIGatewayService) SelectAccountWithLoadAwareness(ctx context.Contex
 	// ============ Layer 2: Load-aware selection ============
 	candidates := make([]*Account, 0, len(accounts))
 	for i := range accounts {
-		acc := &accounts[i]
+		acc := accounts[i].CloneWithEffectivePriority(groupID)
 		if isExcluded(acc.ID) {
 			continue
 		}

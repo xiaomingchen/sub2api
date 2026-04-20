@@ -422,6 +422,15 @@ export interface Group {
   updated_at: string
 }
 
+export interface AccountGroup {
+  account_id: number
+  group_id: number
+  priority: number
+  created_at: string
+  account?: Account
+  group?: Group
+}
+
 export interface AdminGroup extends Group {
   // 模型路由配置（仅管理员可见，内部信息）
   model_routing: Record<string, number[]> | null
@@ -705,6 +714,7 @@ export interface Account {
   proxy?: Proxy
   group_ids?: number[] // Groups this account belongs to
   groups?: Group[] // Preloaded group objects
+  account_groups?: AccountGroup[] // Preloaded account-group bindings
 
   // Rate limit & scheduling fields
   schedulable: boolean

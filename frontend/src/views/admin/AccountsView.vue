@@ -241,8 +241,20 @@
               {{ (row.rate_multiplier ?? 1).toFixed(2) }}x
             </span>
           </template>
-          <template #cell-priority="{ value }">
-            <span class="text-sm text-gray-700 dark:text-gray-300">{{ value }}</span>
+          <template #cell-priority="{ row }">
+            <div class="flex items-center">
+              <input
+                v-if="selectedGroupId && getSelectedGroupBinding(row)"
+                :value="getDisplayPriority(row)"
+                :disabled="updatingPriorityAccountId === row.id"
+                type="number"
+                min="0"
+                step="1"
+                @change="handlePriorityUpdate(row, $event)"
+                class="h-8 w-20 rounded-md border border-gray-300 bg-white px-2 text-sm text-gray-700 outline-none transition focus:border-primary-500 focus:ring-1 focus:ring-primary-500 disabled:cursor-not-allowed disabled:bg-gray-100 dark:border-gray-600 dark:bg-dark-700 dark:text-gray-200 dark:disabled:bg-dark-600"
+              />
+              <span v-else class="text-sm text-gray-700 dark:text-gray-300">{{ getDisplayPriority(row) }}</span>
+            </div>
           </template>
           <template #cell-last_used_at="{ value }">
             <span class="text-sm text-gray-500 dark:text-dark-400">{{ formatRelativeTime(value) }}</span>
@@ -397,6 +409,7 @@ const showSchedulePanel = ref(false)
 const scheduleAcc = ref<Account | null>(null)
 const scheduleModelOptions = ref<SelectOption[]>([])
 const togglingSchedulable = ref<number | null>(null)
+const updatingPriorityAccountId = ref<number | null>(null)
 const menu = reactive<{show:boolean, acc:Account|null, pos:{top:number, left:number}|null}>({ show: false, acc: null, pos: null })
 const exportingData = ref(false)
 
@@ -404,7 +417,7 @@ const exportingData = ref(false)
 const showColumnDropdown = ref(false)
 const columnDropdownRef = ref<HTMLElement | null>(null)
 const hiddenColumns = reactive<Set<string>>(new Set())
-const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'priority', 'rate_multiplier']
+const DEFAULT_HIDDEN_COLUMNS = ['today_stats', 'proxy', 'notes', 'rate_multiplier']
 const HIDDEN_COLUMNS_KEY = 'account-hidden-columns'
 
 // Sorting settings
@@ -418,7 +431,6 @@ const ACCOUNT_SORTABLE_KEYS = new Set([
   'name',
   'status',
   'schedulable',
-  'priority',
   'rate_multiplier',
   'last_used_at',
   'expires_at'
@@ -779,6 +791,7 @@ const inAutoRefreshSilentWindow = () => {
 const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
   return (
     current.updated_at !== next.updated_at ||
+    current.priority !== next.priority ||
     current.current_concurrency !== next.current_concurrency ||
     current.current_window_cost !== next.current_window_cost ||
     current.active_sessions !== next.active_sessions ||
@@ -787,6 +800,7 @@ const shouldReplaceAutoRefreshRow = (current: Account, next: Account) => {
     current.rate_limit_reset_at !== next.rate_limit_reset_at ||
     current.overload_until !== next.overload_until ||
     current.temp_unschedulable_until !== next.temp_unschedulable_until ||
+    accountGroupSignature(current) !== accountGroupSignature(next) ||
     buildOpenAIUsageRefreshKey(current) !== buildOpenAIUsageRefreshKey(next)
   )
 }
@@ -959,7 +973,7 @@ const allColumns = computed(() => {
   c.push(
     { key: 'usage', label: t('admin.accounts.columns.usageWindows'), sortable: false },
     { key: 'proxy', label: t('admin.accounts.columns.proxy'), sortable: false },
-    { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: true },
+    { key: 'priority', label: t('admin.accounts.columns.priority'), sortable: false },
     { key: 'rate_multiplier', label: t('admin.accounts.columns.billingRateMultiplier'), sortable: true },
     { key: 'last_used_at', label: t('admin.accounts.columns.lastUsed'), sortable: true },
     { key: 'expires_at', label: t('admin.accounts.columns.expiresAt'), sortable: true },
@@ -1195,6 +1209,24 @@ const handleBulkUpdated = () => { showBulkEdit.value = false; clearSelection(); 
 const handleDataImported = () => { showImportData.value = false; reload() }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
+const selectedGroupId = computed<number | null>(() => {
+  const raw = String(params.group || '').trim()
+  if (!raw || raw === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE) return null
+  const groupId = Number(raw)
+  return Number.isInteger(groupId) && groupId > 0 ? groupId : null
+})
+const getSelectedGroupBinding = (row: Account) => {
+  const groupId = selectedGroupId.value
+  if (groupId === null) return null
+  return row.account_groups?.find((accountGroup) => accountGroup.group_id === groupId) ?? null
+}
+const getDisplayPriority = (row: Account) => {
+  const binding = getSelectedGroupBinding(row)
+  if (binding) return binding.priority
+  return row.priority
+}
+const accountGroupSignature = (row: Account) =>
+  JSON.stringify((row.account_groups ?? []).map((accountGroup) => [accountGroup.group_id, accountGroup.priority]))
 const buildAccountQueryFilters = () => ({
   platform: params.platform || '',
   type: params.type || '',
@@ -1252,7 +1284,10 @@ const mergeRuntimeFields = (oldAccount: Account, updatedAccount: Account): Accou
   ...updatedAccount,
   current_concurrency: updatedAccount.current_concurrency ?? oldAccount.current_concurrency,
   current_window_cost: updatedAccount.current_window_cost ?? oldAccount.current_window_cost,
-  active_sessions: updatedAccount.active_sessions ?? oldAccount.active_sessions
+  active_sessions: updatedAccount.active_sessions ?? oldAccount.active_sessions,
+  group_ids: updatedAccount.group_ids ?? oldAccount.group_ids,
+  groups: updatedAccount.groups ?? oldAccount.groups,
+  account_groups: updatedAccount.account_groups ?? oldAccount.account_groups
 })
 
 const syncPaginationAfterLocalRemoval = () => {
@@ -1406,6 +1441,46 @@ const handleToggleSchedulable = async (a: Account) => {
     appStore.showError(t('admin.accounts.failedToToggleSchedulable'))
   } finally {
     togglingSchedulable.value = null
+  }
+}
+const handlePriorityUpdate = async (row: Account, event: Event) => {
+  const groupId = selectedGroupId.value
+  if (groupId === null) return
+  const binding = getSelectedGroupBinding(row)
+  if (!binding) return
+
+  const target = event.target as HTMLInputElement | null
+  const nextPriority = Number(target?.value)
+  if (!Number.isInteger(nextPriority) || nextPriority < 0) {
+    appStore.showError(t('common.error'))
+    await reload()
+    return
+  }
+
+  updatingPriorityAccountId.value = row.id
+  try {
+    const updated = await adminAPI.accounts.updateGroupPriority(row.id, groupId, nextPriority)
+    const nextAccountGroups = (updated.account_groups && updated.account_groups.length > 0
+      ? updated.account_groups
+      : row.account_groups ?? []
+    ).map((accountGroup) =>
+      accountGroup.group_id === groupId
+        ? { ...accountGroup, priority: nextPriority }
+        : accountGroup
+    )
+    patchAccountInList({
+      ...updated,
+      account_groups: nextAccountGroups
+    })
+    enterAutoRefreshSilentWindow()
+  } catch (error: any) {
+    console.error('Failed to update account group priority:', error)
+    appStore.showError(error?.response?.data?.message || error?.message || t('common.error'))
+    await reload()
+  } finally {
+    if (updatingPriorityAccountId.value === row.id) {
+      updatingPriorityAccountId.value = null
+    }
   }
 }
 const handleShowTempUnsched = (a: Account) => { tempUnschedAcc.value = a; showTempUnsched.value = true }

@@ -5,6 +5,7 @@ package server_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -662,11 +663,46 @@ func TestAPIContracts(t *testing.T) {
 	}
 }
 
+func TestAdminAccountGroupPriorityContract(t *testing.T) {
+	deps := newContractDeps(t)
+	deps.groupRepo.SetActive([]service.Group{
+		{
+			ID:       27,
+			Name:     "priority-group",
+			Platform: service.PlatformAnthropic,
+			Status:   service.StatusActive,
+		},
+	})
+
+	status, body := doRequest(t, deps.router, http.MethodPut, "/api/v1/admin/accounts/3/group-priority", `{"group_id":27,"priority":4}`, map[string]string{
+		"Content-Type": "application/json",
+	})
+
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, int64(3), deps.accountRepo.lastGroupPriorityUpdate.accountID)
+	require.Equal(t, int64(27), deps.accountRepo.lastGroupPriorityUpdate.groupID)
+	require.Equal(t, 4, deps.accountRepo.lastGroupPriorityUpdate.priority)
+
+	var resp map[string]any
+	require.NoError(t, json.Unmarshal([]byte(body), &resp))
+	require.Equal(t, float64(0), resp["code"])
+	data, ok := resp["data"].(map[string]any)
+	require.True(t, ok)
+	groups, ok := data["account_groups"].([]any)
+	require.True(t, ok)
+	require.Len(t, groups, 1)
+	binding, ok := groups[0].(map[string]any)
+	require.True(t, ok)
+	require.Equal(t, float64(27), binding["group_id"])
+	require.Equal(t, float64(4), binding["priority"])
+}
+
 type contractDeps struct {
 	now         time.Time
 	router      http.Handler
 	apiKeyRepo  *stubApiKeyRepo
 	groupRepo   *stubGroupRepo
+	accountRepo *stubAccountRepo
 	userSubRepo *stubUserSubscriptionRepo
 	usageRepo   *stubUsageLogRepo
 	settingRepo *stubSettingRepo
@@ -782,12 +818,14 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Admin.GET("/settings", adminSettingHandler.GetSettings)
 	v1Admin.POST("/accounts/bulk-update", adminAccountHandler.BulkUpdate)
 	v1Admin.POST("/accounts/batch-test", adminAccountHandler.BatchTest)
+	v1Admin.PUT("/accounts/:id/group-priority", adminAccountHandler.UpdateGroupPriority)
 
 	return &contractDeps{
 		now:         now,
 		router:      r,
 		apiKeyRepo:  apiKeyRepo,
 		groupRepo:   groupRepo,
+		accountRepo: &accountRepo,
 		userSubRepo: userSubRepo,
 		usageRepo:   usageRepo,
 		settingRepo: settingRepo,
@@ -961,12 +999,18 @@ func (stubGroupRepo) Create(ctx context.Context, group *service.Group) error {
 	return errors.New("not implemented")
 }
 
-func (stubGroupRepo) GetByID(ctx context.Context, id int64) (*service.Group, error) {
+func (r *stubGroupRepo) GetByID(ctx context.Context, id int64) (*service.Group, error) {
+	for i := range r.active {
+		if r.active[i].ID == id {
+			clone := r.active[i]
+			return &clone, nil
+		}
+	}
 	return nil, service.ErrGroupNotFound
 }
 
-func (stubGroupRepo) GetByIDLite(ctx context.Context, id int64) (*service.Group, error) {
-	return nil, service.ErrGroupNotFound
+func (r *stubGroupRepo) GetByIDLite(ctx context.Context, id int64) (*service.Group, error) {
+	return r.GetByID(ctx, id)
 }
 
 func (stubGroupRepo) Update(ctx context.Context, group *service.Group) error {
@@ -1029,7 +1073,12 @@ func (stubGroupRepo) UpdateSortOrders(ctx context.Context, updates []service.Gro
 }
 
 type stubAccountRepo struct {
-	bulkUpdateIDs []int64
+	bulkUpdateIDs           []int64
+	lastGroupPriorityUpdate struct {
+		accountID int64
+		groupID   int64
+		priority  int
+	}
 }
 
 func (s *stubAccountRepo) Create(ctx context.Context, account *service.Account) error {
@@ -1102,6 +1151,29 @@ func (s *stubAccountRepo) ClearError(ctx context.Context, id int64) error {
 
 func (s *stubAccountRepo) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
 	return errors.New("not implemented")
+}
+
+func (s *stubAccountRepo) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*service.Account, error) {
+	s.lastGroupPriorityUpdate.accountID = accountID
+	s.lastGroupPriorityUpdate.groupID = groupID
+	s.lastGroupPriorityUpdate.priority = priority
+
+	account := service.Account{
+		ID:       accountID,
+		Name:     "account",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeOAuth,
+		Status:   service.StatusActive,
+		AccountGroups: []service.AccountGroup{
+			{
+				AccountID: accountID,
+				GroupID:   groupID,
+				Priority:  priority,
+				CreatedAt: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC),
+			},
+		},
+	}
+	return &account, nil
 }
 
 func (s *stubAccountRepo) AutoPauseExpiredAccounts(ctx context.Context, now time.Time) (int64, error) {

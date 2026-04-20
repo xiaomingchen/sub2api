@@ -104,6 +104,34 @@ func (a *Account) EffectiveLoadFactor() int {
 	return 1
 }
 
+func (a *Account) PriorityForGroup(groupID int64) (int, bool) {
+	if a == nil {
+		return 0, false
+	}
+	if groupID <= 0 {
+		return a.Priority, false
+	}
+	for i := range a.AccountGroups {
+		if a.AccountGroups[i].GroupID == groupID {
+			return a.AccountGroups[i].Priority, true
+		}
+	}
+	return a.Priority, false
+}
+
+func (a *Account) CloneWithEffectivePriority(groupID *int64) *Account {
+	if a == nil {
+		return nil
+	}
+	clone := *a
+	if groupID != nil && *groupID > 0 {
+		if priority, ok := a.PriorityForGroup(*groupID); ok {
+			clone.Priority = priority
+		}
+	}
+	return &clone
+}
+
 func (a *Account) IsSchedulable() bool {
 	if !a.IsActive() || !a.Schedulable {
 		return false

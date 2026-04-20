@@ -145,6 +145,21 @@ export async function update(id: number, updates: UpdateAccountRequest): Promise
 }
 
 /**
+ * Update account-group binding priority
+ * @param id - Account ID
+ * @param groupId - Group ID
+ * @param priority - Binding priority
+ * @returns Updated account
+ */
+export async function updateGroupPriority(id: number, groupId: number, priority: number): Promise<Account> {
+  const { data } = await apiClient.put<Account>(`/admin/accounts/${id}/group-priority`, {
+    group_id: groupId,
+    priority
+  })
+  return data
+}
+
+/**
  * Check mixed-channel risk for account-group binding.
  */
 export async function checkMixedChannelRisk(
@@ -651,6 +666,7 @@ export const accountsAPI = {
   getById,
   create,
   update,
+  updateGroupPriority,
   checkMixedChannelRisk,
   delete: deleteAccount,
   toggleStatus,

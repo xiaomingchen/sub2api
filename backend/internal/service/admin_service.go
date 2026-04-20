@@ -73,6 +73,7 @@ type AdminService interface {
 	// ForceAntigravityPrivacy 强制重新设置 Antigravity OAuth 账号隐私，无论当前状态。
 	ForceAntigravityPrivacy(ctx context.Context, account *Account) string
 	SetAccountSchedulable(ctx context.Context, id int64, schedulable bool) (*Account, error)
+	UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*Account, error)
 	BulkUpdateAccounts(ctx context.Context, input *BulkUpdateAccountsInput) (*BulkUpdateAccountsResult, error)
 	CheckMixedChannelRisk(ctx context.Context, currentAccountID int64, currentAccountPlatform string, groupIDs []int64) error
 
@@ -375,6 +376,10 @@ type ProxyExitInfoProber interface {
 
 type groupExistenceBatchReader interface {
 	ExistsByIDs(ctx context.Context, ids []int64) (map[int64]bool, error)
+}
+
+type accountGroupPriorityUpdater interface {
+	UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*Account, error)
 }
 
 type proxyQualityTarget struct {
@@ -1907,6 +1912,21 @@ func (s *adminServiceImpl) SetAccountSchedulable(ctx context.Context, id int64, 
 		return nil, err
 	}
 	return updated, nil
+}
+
+func (s *adminServiceImpl) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*Account, error) {
+	if s.groupRepo == nil {
+		return nil, errors.New("group repository unavailable")
+	}
+	if _, err := s.groupRepo.GetByID(ctx, groupID); err != nil {
+		return nil, fmt.Errorf("get group: %w", err)
+	}
+
+	updater, ok := s.accountRepo.(accountGroupPriorityUpdater)
+	if !ok {
+		return nil, errors.New("account repository does not support group priority update")
+	}
+	return updater.UpdateAccountGroupPriority(ctx, accountID, groupID, priority)
 }
 
 // Proxy management implementations

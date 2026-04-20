@@ -10,23 +10,28 @@ import (
 )
 
 type stubAdminService struct {
-	users                []service.User
-	apiKeys              []service.APIKey
-	groups               []service.Group
-	accounts             []service.Account
-	proxies              []service.Proxy
-	proxyCounts          []service.ProxyWithAccountCount
-	redeems              []service.RedeemCode
-	createdAccounts      []*service.CreateAccountInput
-	createdProxies       []*service.CreateProxyInput
-	updatedProxyIDs      []int64
-	updatedProxies       []*service.UpdateProxyInput
-	testedProxyIDs       []int64
-	createAccountErr     error
-	updateAccountErr     error
-	bulkUpdateAccountErr error
-	checkMixedErr        error
-	lastMixedCheck       struct {
+	users                   []service.User
+	apiKeys                 []service.APIKey
+	groups                  []service.Group
+	accounts                []service.Account
+	proxies                 []service.Proxy
+	proxyCounts             []service.ProxyWithAccountCount
+	redeems                 []service.RedeemCode
+	createdAccounts         []*service.CreateAccountInput
+	createdProxies          []*service.CreateProxyInput
+	updatedProxyIDs         []int64
+	updatedProxies          []*service.UpdateProxyInput
+	testedProxyIDs          []int64
+	createAccountErr        error
+	updateAccountErr        error
+	bulkUpdateAccountErr    error
+	checkMixedErr           error
+	lastGroupPriorityUpdate struct {
+		accountID int64
+		groupID   int64
+		priority  int
+	}
+	lastMixedCheck struct {
 		accountID int64
 		platform  string
 		groupIDs  []int64
@@ -280,6 +285,28 @@ func (s *stubAdminService) SetAccountError(ctx context.Context, id int64, errorM
 
 func (s *stubAdminService) SetAccountSchedulable(ctx context.Context, id int64, schedulable bool) (*service.Account, error) {
 	account := service.Account{ID: id, Name: "account", Status: service.StatusActive, Schedulable: schedulable}
+	return &account, nil
+}
+
+func (s *stubAdminService) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*service.Account, error) {
+	s.lastGroupPriorityUpdate.accountID = accountID
+	s.lastGroupPriorityUpdate.groupID = groupID
+	s.lastGroupPriorityUpdate.priority = priority
+	account := service.Account{
+		ID:       accountID,
+		Name:     "account",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeOAuth,
+		Status:   service.StatusActive,
+		AccountGroups: []service.AccountGroup{
+			{
+				AccountID: accountID,
+				GroupID:   groupID,
+				Priority:  priority,
+				CreatedAt: time.Now(),
+			},
+		},
+	}
 	return &account, nil
 }
 

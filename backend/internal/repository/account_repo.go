@@ -835,6 +835,38 @@ func (r *accountRepository) RemoveFromGroup(ctx context.Context, accountID, grou
 	return nil
 }
 
+func (r *accountRepository) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*service.Account, error) {
+	client := clientFromContext(ctx, r.client)
+	result, err := client.ExecContext(ctx, `
+		UPDATE account_groups
+		SET priority = $1
+		WHERE account_id = $2 AND group_id = $3
+	`, priority, accountID, groupID)
+	if err != nil {
+		return nil, err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if affected == 0 {
+		return nil, service.ErrAccountNotFound
+	}
+
+	updated, err := r.GetByID(ctx, accountID)
+	if err != nil {
+		return nil, err
+	}
+
+	payload := buildSchedulerGroupPayload([]int64{groupID})
+	if err := enqueueSchedulerOutbox(ctx, r.sql, service.SchedulerOutboxEventAccountGroupsChanged, &accountID, nil, payload); err != nil {
+		logger.LegacyPrintf("repository.account", "[SchedulerOutbox] enqueue group priority update failed: account=%d group=%d err=%v", accountID, groupID, err)
+	}
+	r.syncSchedulerAccountSnapshot(ctx, accountID)
+	return updated, nil
+}
+
 func (r *accountRepository) GetGroups(ctx context.Context, accountID int64) ([]service.Group, error) {
 	groups, err := r.client.Group.Query().
 		Where(

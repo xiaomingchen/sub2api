@@ -1885,6 +1885,44 @@ func (h *AccountHandler) SetSchedulable(c *gin.Context) {
 	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
 }
 
+// UpdateAccountGroupPriorityRequest represents the request body for updating account-group priority.
+type UpdateAccountGroupPriorityRequest struct {
+	GroupID  int64 `json:"group_id" binding:"required,gt=0"`
+	Priority *int  `json:"priority" binding:"required"`
+}
+
+// UpdateGroupPriority handles updating the priority of an account within a specific group.
+// PUT /api/v1/admin/accounts/:id/group-priority
+func (h *AccountHandler) UpdateGroupPriority(c *gin.Context) {
+	accountID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil {
+		response.BadRequest(c, "Invalid account ID")
+		return
+	}
+
+	var req UpdateAccountGroupPriorityRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request: "+err.Error())
+		return
+	}
+	if req.Priority == nil {
+		response.BadRequest(c, "priority is required")
+		return
+	}
+	if *req.Priority < 0 {
+		response.BadRequest(c, "priority must be >= 0")
+		return
+	}
+
+	account, err := h.adminService.UpdateAccountGroupPriority(c.Request.Context(), accountID, req.GroupID, *req.Priority)
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
+
+	response.Success(c, h.buildAccountResponseWithRuntime(c.Request.Context(), account))
+}
+
 // GetAvailableModels handles getting available models for an account
 // GET /api/v1/admin/accounts/:id/models
 func (h *AccountHandler) GetAvailableModels(c *gin.Context) {

@@ -1405,7 +1405,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 			if !s.isAccountSchedulableForRPM(ctx, account, false) {
 				continue
 			}
-			routingCandidates = append(routingCandidates, account)
+			routingCandidates = append(routingCandidates, account.CloneWithEffectivePriority(groupID))
 		}
 
 		if s.debugModelRoutingEnabled() {
@@ -1670,7 +1670,7 @@ func (s *GatewayService) SelectAccountWithLoadAwareness(ctx context.Context, gro
 		if !s.isAccountSchedulableForRPM(ctx, acc, false) {
 			continue
 		}
-		candidates = append(candidates, acc)
+		candidates = append(candidates, acc.CloneWithEffectivePriority(groupID))
 	}
 
 	if len(candidates) == 0 {
@@ -2752,6 +2752,13 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 			return nil, fmt.Errorf("query accounts failed: %w", err)
 		}
 		accountsLoaded = true
+		if groupID != nil {
+			for i := range accounts {
+				if clone := accounts[i].CloneWithEffectivePriority(groupID); clone != nil {
+					accounts[i] = *clone
+				}
+			}
+		}
 
 		// 提前预取窗口费用+RPM 计数，确保 routing 段内的调度检查调用能命中缓存
 		ctx = s.withWindowCostPrefetch(ctx, accounts)
@@ -2867,6 +2874,13 @@ func (s *GatewayService) selectAccountForModelWithPlatform(ctx context.Context, 
 		accounts, _, err = s.listSchedulableAccounts(ctx, groupID, platform, hasForcePlatform)
 		if err != nil {
 			return nil, fmt.Errorf("query accounts failed: %w", err)
+		}
+		if groupID != nil {
+			for i := range accounts {
+				if clone := accounts[i].CloneWithEffectivePriority(groupID); clone != nil {
+					accounts[i] = *clone
+				}
+			}
 		}
 	}
 
