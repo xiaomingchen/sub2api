@@ -111,6 +111,22 @@ func TestSortAccountsByPriorityAndLastUsed_MixedPriorityAndTime(t *testing.T) {
 	require.Equal(t, int64(4), accounts[3].ID, "优先级2 + 有时间")
 }
 
+func TestCloneWithEffectivePriority_DoesNotOverrideAccountPriorityForGroup(t *testing.T) {
+	groupID := int64(42)
+	account := &Account{
+		ID:       1,
+		Priority: 1,
+		AccountGroups: []AccountGroup{
+			{AccountID: 1, GroupID: groupID, Priority: 9},
+		},
+	}
+
+	clone := account.CloneWithEffectivePriority(&groupID)
+	require.NotNil(t, clone)
+	require.Equal(t, 1, clone.Priority, "组绑定优先级不应覆盖账号自身优先级")
+	require.Equal(t, 1, account.Priority, "原始账号优先级不应被修改")
+}
+
 // --- filterByMinPriority ---
 
 func TestFilterByMinPriority_Empty(t *testing.T) {

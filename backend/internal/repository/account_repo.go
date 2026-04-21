@@ -1069,7 +1069,7 @@ func (r *accountRepository) ListSchedulableByGroupIDAndPlatforms(ctx context.Con
 	if len(platforms) == 0 {
 		return nil, nil
 	}
-	// 复用按分组查询逻辑，保证分组优先级 + 账号优先级的排序与筛选一致。
+	// 复用按分组查询逻辑，排序仅按账号优先级，避免分组绑定优先级覆盖账号优先级。
 	return r.queryAccountsByGroup(ctx, groupID, accountGroupQueryOptions{
 		status:      service.StatusActive,
 		schedulable: true,
@@ -1545,8 +1545,8 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 
 	groups, err := q.
 		Order(
-			dbaccountgroup.ByPriority(),
 			dbaccountgroup.ByAccountField(dbaccount.FieldPriority),
+			dbaccountgroup.ByAccountField(dbaccount.FieldID),
 		).
 		WithAccount().
 		All(ctx)

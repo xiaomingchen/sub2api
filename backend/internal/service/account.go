@@ -124,11 +124,7 @@ func (a *Account) CloneWithEffectivePriority(groupID *int64) *Account {
 		return nil
 	}
 	clone := *a
-	if groupID != nil && *groupID > 0 {
-		if priority, ok := a.PriorityForGroup(*groupID); ok {
-			clone.Priority = priority
-		}
-	}
+	// 保留 groupID 参数以兼容现有调用方；调度优先级统一使用账号本身 priority。
 	return &clone
 }
 

@@ -599,6 +599,39 @@ func (s *AccountRepoSuite) TestListSchedulableByGroupIDAndPlatform() {
 	s.Require().Equal(a1.ID, accounts[0].ID)
 }
 
+func (s *AccountRepoSuite) TestListSchedulableByGroupIDAndPlatform_OrdersByAccountPriorityNotBindingPriority() {
+	group := mustCreateGroup(s.T(), s.client, &service.Group{
+		Name:     "g-priority-order",
+		Platform: service.PlatformOpenAI,
+	})
+	accountPriorityWins := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "account-priority-wins",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    1,
+	})
+	bindingPriorityWinsBeforeFix := mustCreateAccount(s.T(), s.client, &service.Account{
+		Name:        "binding-priority-used-to-win",
+		Platform:    service.PlatformOpenAI,
+		Type:        service.AccountTypeAPIKey,
+		Status:      service.StatusActive,
+		Schedulable: true,
+		Concurrency: 1,
+		Priority:    5,
+	})
+	mustBindAccountToGroup(s.T(), s.client, accountPriorityWins.ID, group.ID, 9)
+	mustBindAccountToGroup(s.T(), s.client, bindingPriorityWinsBeforeFix.ID, group.ID, 1)
+
+	accounts, err := s.repo.ListSchedulableByGroupIDAndPlatform(s.ctx, group.ID, service.PlatformOpenAI)
+	s.Require().NoError(err)
+	s.Require().Len(accounts, 2)
+	s.Require().Equal(accountPriorityWins.ID, accounts[0].ID, "组内排序应由账号 priority 决定")
+	s.Require().Equal(bindingPriorityWinsBeforeFix.ID, accounts[1].ID)
+}
+
 func (s *AccountRepoSuite) TestSetSchedulable() {
 	account := mustCreateAccount(s.T(), s.client, &service.Account{Name: "acc-sched", Schedulable: true})
 	cacheRecorder := &schedulerCacheRecorder{}
