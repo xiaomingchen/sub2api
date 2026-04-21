@@ -1585,7 +1585,7 @@ func (r *accountRepository) queryAccountsByGroup(ctx context.Context, groupID in
 	groups, err := q.
 		Order(
 			dbaccountgroup.ByAccountField(dbaccount.FieldPriority),
-			dbaccountgroup.ByAccountField(dbaccount.FieldID),
+			dbaccountgroup.ByAccountID(),
 		).
 		WithAccount().
 		All(ctx)
