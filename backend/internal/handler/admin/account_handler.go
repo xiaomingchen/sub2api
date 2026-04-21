@@ -168,6 +168,16 @@ type AccountWithConcurrency struct {
 
 const accountListGroupUngroupedQueryValue = "ungrouped"
 
+func normalizeOAuthPlanTypeFilter(raw string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "", "free", "team", "plus", "pro":
+		return normalized, nil
+	default:
+		return "", infraerrors.BadRequest("INVALID_OAUTH_PLAN_TYPE", "invalid oauth_plan_type filter")
+	}
+}
+
 func (h *AccountHandler) buildAccountResponseWithRuntime(ctx context.Context, account *service.Account) AccountWithConcurrency {
 	item := AccountWithConcurrency{
 		Account:            dto.AccountFromService(account),
@@ -221,6 +231,11 @@ func (h *AccountHandler) List(c *gin.Context) {
 	status := c.Query("status")
 	search := c.Query("search")
 	privacyMode := strings.TrimSpace(c.Query("privacy_mode"))
+	oauthPlanType, err := normalizeOAuthPlanTypeFilter(c.Query("oauth_plan_type"))
+	if err != nil {
+		response.ErrorFrom(c, err)
+		return
+	}
 	sortBy := c.DefaultQuery("sort_by", "name")
 	sortOrder := c.DefaultQuery("sort_order", "asc")
 	// 标准化和验证 search 参数
@@ -248,7 +263,7 @@ func (h *AccountHandler) List(c *gin.Context) {
 		}
 	}
 
-	accounts, total, err := h.adminService.ListAccounts(c.Request.Context(), page, pageSize, platform, accountType, status, search, groupID, privacyMode, sortBy, sortOrder)
+	accounts, total, err := h.adminService.ListAccounts(c.Request.Context(), page, pageSize, platform, accountType, status, search, groupID, privacyMode, oauthPlanType, sortBy, sortOrder)
 	if err != nil {
 		response.ErrorFrom(c, err)
 		return
@@ -2175,7 +2190,7 @@ func (h *AccountHandler) BatchRefreshTier(c *gin.Context) {
 	accounts := make([]*service.Account, 0)
 
 	if len(req.AccountIDs) == 0 {
-		allAccounts, _, err := h.adminService.ListAccounts(ctx, 1, 10000, "gemini", "oauth", "", "", 0, "", "name", "asc")
+		allAccounts, _, err := h.adminService.ListAccounts(ctx, 1, 10000, "gemini", "oauth", "", "", 0, "", "", "name", "asc")
 		if err != nil {
 			response.ErrorFrom(c, err)
 			return

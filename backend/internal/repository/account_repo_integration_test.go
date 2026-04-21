@@ -216,6 +216,7 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 		search      string
 		groupID     int64
 		privacyMode string
+		oauthPlan   string
 		wantCount   int
 		validate    func(accounts []service.Account)
 	}{
@@ -403,6 +404,46 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 				s.ElementsMatch([]string{"privacy-unset", "privacy-empty"}, names)
 			},
 		},
+		{
+			name: "filter_by_oauth_plan_type_excludes_non_oauth",
+			setup: func(client *dbent.Client) {
+				mustCreateAccount(s.T(), client, &service.Account{
+					Name:        "oauth-pro",
+					Type:        service.AccountTypeOAuth,
+					Credentials: map[string]any{"plan_type": "chatgptpro"},
+				})
+				mustCreateAccount(s.T(), client, &service.Account{
+					Name:        "apikey-pro",
+					Type:        service.AccountTypeAPIKey,
+					Credentials: map[string]any{"plan_type": "pro"},
+				})
+			},
+			oauthPlan: "pro",
+			wantCount: 1,
+			validate: func(accounts []service.Account) {
+				s.Require().Equal("oauth-pro", accounts[0].Name)
+			},
+		},
+		{
+			name: "filter_by_oauth_plan_type_plus_supports_alias",
+			setup: func(client *dbent.Client) {
+				mustCreateAccount(s.T(), client, &service.Account{
+					Name:        "oauth-plus",
+					Type:        service.AccountTypeOAuth,
+					Credentials: map[string]any{"plan_type": "chatgpt_plus"},
+				})
+				mustCreateAccount(s.T(), client, &service.Account{
+					Name:        "oauth-team",
+					Type:        service.AccountTypeOAuth,
+					Credentials: map[string]any{"plan_type": "chatgptteam"},
+				})
+			},
+			oauthPlan: "plus",
+			wantCount: 1,
+			validate: func(accounts []service.Account) {
+				s.Require().Equal("oauth-plus", accounts[0].Name)
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -415,7 +456,7 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 
 			tt.setup(client)
 
-			accounts, _, err := repo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, tt.platform, tt.accType, tt.status, tt.search, tt.groupID, tt.privacyMode)
+			accounts, _, err := repo.ListWithFilters(ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, tt.platform, tt.accType, tt.status, tt.search, tt.groupID, tt.privacyMode, tt.oauthPlan)
 			s.Require().NoError(err)
 			s.Require().Len(accounts, tt.wantCount)
 			if tt.validate != nil {
@@ -482,7 +523,7 @@ func (s *AccountRepoSuite) TestPreload_And_VirtualFields() {
 	s.Require().Len(got.Groups, 1, "expected Groups to be populated")
 	s.Require().Equal(group.ID, got.Groups[0].ID)
 
-	accounts, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, "", "", "", "acc", 0, "")
+	accounts, page, err := s.repo.ListWithFilters(s.ctx, pagination.PaginationParams{Page: 1, PageSize: 10}, "", "", "", "acc", 0, "", "")
 	s.Require().NoError(err, "ListWithFilters")
 	s.Require().Equal(int64(1), page.Total)
 	s.Require().Len(accounts, 1)

@@ -457,10 +457,10 @@ func (r *accountRepository) Delete(ctx context.Context, id int64) error {
 }
 
 func (r *accountRepository) List(ctx context.Context, params pagination.PaginationParams) ([]service.Account, *pagination.PaginationResult, error) {
-	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "")
+	return r.ListWithFilters(ctx, params, "", "", "", "", 0, "", "")
 }
 
-func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
+func (r *accountRepository) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode, oauthPlanType string) ([]service.Account, *pagination.PaginationResult, error) {
 	q := r.client.Account.Query()
 
 	if platform != "" {
@@ -468,6 +468,30 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 	}
 	if accountType != "" {
 		q = q.Where(dbaccount.TypeEQ(accountType))
+	}
+	if oauthPlanType != "" {
+		normalized := strings.ToLower(strings.TrimSpace(oauthPlanType))
+		values := normalizeOAuthPlanTypeFilterValues(normalized)
+		if len(values) == 0 {
+			q = q.Where(dbpredicate.Account(func(s *entsql.Selector) {
+				s.Where(entsql.False())
+			}))
+		} else {
+			// OAuth 套餐筛选仅作用于 OAuth 账号，避免非 OAuth 账号被误匹配。
+			q = q.Where(dbaccount.TypeEQ(service.AccountTypeOAuth))
+			q = q.Where(dbpredicate.Account(func(s *entsql.Selector) {
+				const planExpr = "LOWER(COALESCE(credentials->>'plan_type',''))"
+				preds := make([]*entsql.Predicate, 0, len(values))
+				for _, value := range values {
+					preds = append(preds, entsql.ExprP(planExpr+" = ?", value))
+				}
+				if len(preds) == 1 {
+					s.Where(preds[0])
+					return
+				}
+				s.Where(entsql.Or(preds...))
+			}))
+		}
 	}
 	if status != "" {
 		switch status {
@@ -575,6 +599,21 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 		return nil, nil, err
 	}
 	return outAccounts, paginationResultFromTotal(int64(total), params), nil
+}
+
+func normalizeOAuthPlanTypeFilterValues(planType string) []string {
+	switch planType {
+	case "free":
+		return []string{"free"}
+	case "team":
+		return []string{"team", "chatgptteam", "chatgpt_team"}
+	case "plus":
+		return []string{"plus", "chatgptplus", "chatgpt_plus"}
+	case "pro":
+		return []string{"pro", "chatgptpro", "chatgpt_pro"}
+	default:
+		return nil
+	}
 }
 
 func accountListOrder(params pagination.PaginationParams) []func(*entsql.Selector) {

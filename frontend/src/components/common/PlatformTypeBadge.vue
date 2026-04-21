@@ -93,23 +93,45 @@ const typeLabel = computed(() => {
   }
 })
 
-const planLabel = computed(() => {
+const normalizedPlanType = computed(() => {
   if (!props.planType) return ''
   const lower = props.planType.toLowerCase()
   switch (lower) {
-    case 'plus':
-      return 'Plus'
-    case 'team':
-      return 'Team'
-    case 'chatgptpro':
-    case 'pro':
-      return 'Pro'
     case 'free':
-      return 'Free'
+      return 'free'
+    case 'team':
+    case 'chatgptteam':
+    case 'chatgpt_team':
+      return 'team'
+    case 'plus':
+    case 'chatgptplus':
+    case 'chatgpt_plus':
+      return 'plus'
+    case 'chatgptpro':
+    case 'chatgpt_pro':
+    case 'pro':
+      return 'pro'
+    case 'abnormal':
+      return 'abnormal'
+    default:
+      return lower
+  }
+})
+
+const planLabel = computed(() => {
+  switch (normalizedPlanType.value) {
+    case 'plus':
+      return t('admin.accounts.oauthPlanPlus')
+    case 'team':
+      return t('admin.accounts.oauthPlanTeam')
+    case 'pro':
+      return t('admin.accounts.oauthPlanPro')
+    case 'free':
+      return t('admin.accounts.oauthPlanFree')
     case 'abnormal':
       return t('admin.accounts.subscriptionAbnormal')
     default:
-      return props.planType
+      return props.planType || ''
   }
 })
 
@@ -140,7 +162,7 @@ const typeClass = computed(() => {
 })
 
 const planBadgeClass = computed(() => {
-  if (props.planType && props.planType.toLowerCase() === 'abnormal') {
+  if (normalizedPlanType.value === 'abnormal') {
     return 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
   }
   return typeClass.value
@@ -149,7 +171,7 @@ const planBadgeClass = computed(() => {
 // Subscription expiration label (non-free only)
 const expiresLabel = computed(() => {
   if (!props.subscriptionExpiresAt || !props.planType) return ''
-  if (props.planType.toLowerCase() === 'free') return ''
+  if (normalizedPlanType.value === 'free') return ''
   try {
     const d = new Date(props.subscriptionExpiresAt)
     if (isNaN(d.getTime())) return ''

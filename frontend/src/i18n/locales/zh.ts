@@ -2168,8 +2168,13 @@ export default {
       allTypes: '全部类型',
       allStatus: '全部状态',
       allGroups: '全部分组',
+      allOAuthPlans: '全部 OAuth 套餐',
       ungroupedGroup: '未分配分组',
       oauthType: 'OAuth',
+      oauthPlanFree: 'FREE',
+      oauthPlanTeam: 'TEAM',
+      oauthPlanPlus: 'PLUS',
+      oauthPlanPro: 'PRO',
       // Schedulable toggle
       schedulable: '参与调度',
       schedulableHint: '开启后账号参与API请求调度',

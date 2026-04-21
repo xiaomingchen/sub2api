@@ -179,6 +179,12 @@
               >
                 {{ row.extra.email_address }}
               </span>
+              <span
+                v-if="getOAuthPlanBadgeLabel(row)"
+                :class="['mt-1 inline-flex w-fit items-center rounded px-1.5 py-0.5 text-[10px] font-semibold tracking-wide', getOAuthPlanBadgeClass(row)]"
+              >
+                {{ getOAuthPlanBadgeLabel(row) }}
+              </span>
             </div>
           </template>
           <template #cell-notes="{ value }">
@@ -648,6 +654,7 @@ const {
   initialParams: {
     platform: '',
     type: '',
+    oauth_plan_type: '',
     status: '',
     privacy_mode: '',
     group: '',
@@ -1209,6 +1216,57 @@ const handleBulkUpdated = () => { showBulkEdit.value = false; clearSelection(); 
 const handleDataImported = () => { showImportData.value = false; reload() }
 const ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE = 'ungrouped'
 const ACCOUNT_PRIVACY_MODE_UNSET_QUERY_VALUE = '__unset__'
+const normalizeOAuthPlanType = (raw: unknown): '' | 'free' | 'team' | 'plus' | 'pro' => {
+  if (typeof raw !== 'string') return ''
+  const normalized = raw.trim().toLowerCase()
+  switch (normalized) {
+    case 'free':
+      return 'free'
+    case 'team':
+    case 'chatgptteam':
+    case 'chatgpt_team':
+      return 'team'
+    case 'plus':
+    case 'chatgptplus':
+    case 'chatgpt_plus':
+      return 'plus'
+    case 'pro':
+    case 'chatgptpro':
+    case 'chatgpt_pro':
+      return 'pro'
+    default:
+      return ''
+  }
+}
+const getOAuthPlanBadgeLabel = (account: Account): string => {
+  if (account.type !== 'oauth') return ''
+  switch (normalizeOAuthPlanType(account.credentials?.plan_type)) {
+    case 'free':
+      return t('admin.accounts.oauthPlanFree')
+    case 'team':
+      return t('admin.accounts.oauthPlanTeam')
+    case 'plus':
+      return t('admin.accounts.oauthPlanPlus')
+    case 'pro':
+      return t('admin.accounts.oauthPlanPro')
+    default:
+      return ''
+  }
+}
+const getOAuthPlanBadgeClass = (account: Account): string => {
+  switch (normalizeOAuthPlanType(account.credentials?.plan_type)) {
+    case 'free':
+      return 'bg-slate-100 text-slate-700 dark:bg-slate-700/60 dark:text-slate-200'
+    case 'team':
+      return 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
+    case 'plus':
+      return 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300'
+    case 'pro':
+      return 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+    default:
+      return 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
+  }
+}
 const selectedGroupId = computed<number | null>(() => {
   const raw = String(params.group || '').trim()
   if (!raw || raw === ACCOUNT_UNGROUPED_GROUP_QUERY_VALUE) return null
@@ -1230,6 +1288,7 @@ const accountGroupSignature = (row: Account) =>
 const buildAccountQueryFilters = () => ({
   platform: params.platform || '',
   type: params.type || '',
+  oauth_plan_type: params.oauth_plan_type || '',
   status: params.status || '',
   group: params.group || '',
   privacy_mode: params.privacy_mode || '',
@@ -1241,6 +1300,10 @@ const accountMatchesCurrentFilters = (account: Account) => {
   const filters = buildAccountQueryFilters()
   if (filters.platform && account.platform !== filters.platform) return false
   if (filters.type && account.type !== filters.type) return false
+  if (filters.oauth_plan_type) {
+    if (account.type !== 'oauth') return false
+    if (normalizeOAuthPlanType(account.credentials?.plan_type) !== filters.oauth_plan_type) return false
+  }
   if (filters.status) {
     const now = Date.now()
     const rateLimitResetAt = account.rate_limit_reset_at ? new Date(account.rate_limit_reset_at).getTime() : Number.NaN

@@ -181,7 +181,7 @@ func TestExportDataPassesAccountFiltersAndSort(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/api/v1/admin/accounts/data?platform=openai&type=oauth&status=active&group=12&privacy_mode=blocked&search=keyword&sort_by=priority&sort_order=desc",
+		"/api/v1/admin/accounts/data?platform=openai&type=oauth&oauth_plan_type=pro&status=active&group=12&privacy_mode=blocked&search=keyword&sort_by=priority&sort_order=desc",
 		nil,
 	)
 	router.ServeHTTP(rec, req)
@@ -193,6 +193,7 @@ func TestExportDataPassesAccountFiltersAndSort(t *testing.T) {
 	require.Equal(t, "active", adminSvc.lastListAccounts.status)
 	require.Equal(t, int64(12), adminSvc.lastListAccounts.groupID)
 	require.Equal(t, "blocked", adminSvc.lastListAccounts.privacyMode)
+	require.Equal(t, "pro", adminSvc.lastListAccounts.oauthPlanType)
 	require.Equal(t, "keyword", adminSvc.lastListAccounts.search)
 	require.Equal(t, "priority", adminSvc.lastListAccounts.sortBy)
 	require.Equal(t, "desc", adminSvc.lastListAccounts.sortOrder)

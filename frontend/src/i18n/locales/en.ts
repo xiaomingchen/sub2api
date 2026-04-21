@@ -2087,8 +2087,13 @@ export default {
       allTypes: 'All Types',
       allStatus: 'All Status',
       allGroups: 'All Groups',
+      allOAuthPlans: 'All OAuth Plans',
       ungroupedGroup: 'Ungrouped',
       oauthType: 'OAuth',
+      oauthPlanFree: 'FREE',
+      oauthPlanTeam: 'TEAM',
+      oauthPlanPlus: 'PLUS',
+      oauthPlanPro: 'PRO',
       setupToken: 'Setup Token',
       apiKey: 'API Key',
       // Schedulable toggle
