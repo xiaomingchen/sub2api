@@ -133,69 +133,72 @@ func fetchChatGPTAccountInfo(ctx context.Context, clientFactory PrivacyClientFac
 		return nil
 	}
 
-	info := &ChatGPTAccountInfo{}
-
-	accounts, ok := result["accounts"].(map[string]any)
-	if !ok {
-		slog.Debug("chatgpt_account_check_no_accounts", "body", truncate(resp.String(), 300))
-		return nil
-	}
-
-	// 优先匹配 orgID 对应的账号（access_token JWT 中的 poid）
-	if orgID != "" {
-		if acctRaw, ok := accounts[orgID]; ok {
-			if acct, ok := acctRaw.(map[string]any); ok {
-				fillAccountInfo(info, acct)
-			}
-		}
-	}
-
-	// 未匹配到时，遍历所有账号：优先 is_default，次选非 free
-	if info.PlanType == "" {
-		type candidate struct {
-			planType  string
-			expiresAt string
-		}
-		var defaultC, paidC, anyC candidate
-		for _, acctRaw := range accounts {
-			acct, ok := acctRaw.(map[string]any)
-			if !ok {
-				continue
-			}
-			planType := extractPlanType(acct)
-			if planType == "" {
-				continue
-			}
-			ea := extractEntitlementExpiresAt(acct)
-			if anyC.planType == "" {
-				anyC = candidate{planType, ea}
-			}
-			if account, ok := acct["account"].(map[string]any); ok {
-				if isDefault, _ := account["is_default"].(bool); isDefault {
-					defaultC = candidate{planType, ea}
-				}
-			}
-			if !strings.EqualFold(planType, "free") && paidC.planType == "" {
-				paidC = candidate{planType, ea}
-			}
-		}
-		// 优先级：default > 非 free > 任意
-		switch {
-		case defaultC.planType != "":
-			info.PlanType, info.SubscriptionExpiresAt = defaultC.planType, defaultC.expiresAt
-		case paidC.planType != "":
-			info.PlanType, info.SubscriptionExpiresAt = paidC.planType, paidC.expiresAt
-		default:
-			info.PlanType, info.SubscriptionExpiresAt = anyC.planType, anyC.expiresAt
-		}
-	}
-
-	if info.PlanType == "" {
+	info := selectChatGPTAccountInfo(result, orgID)
+	if info == nil || info.PlanType == "" {
 		slog.Debug("chatgpt_account_check_no_plan_type", "body", truncate(resp.String(), 300))
 		return nil
 	}
 
 	slog.Info("chatgpt_account_check_success", "plan_type", info.PlanType, "subscription_expires_at", info.SubscriptionExpiresAt, "org_id", orgID)
+	return info
+}
+
+func selectChatGPTAccountInfo(result map[string]any, orgID string) *ChatGPTAccountInfo {
+	accounts, ok := result["accounts"].(map[string]any)
+	if !ok {
+		return nil
+	}
+
+	var directOrgCandidate *ChatGPTAccountInfo
+	if orgID != "" {
+		if acctRaw, ok := accounts[orgID]; ok {
+			if acct, ok := acctRaw.(map[string]any); ok {
+				directOrgCandidate = buildChatGPTAccountInfo(acct)
+			}
+		}
+	}
+
+	var paidCandidate, defaultCandidate, anyCandidate *ChatGPTAccountInfo
+	for _, acctRaw := range accounts {
+		acct, ok := acctRaw.(map[string]any)
+		if !ok {
+			continue
+		}
+		candidate := buildChatGPTAccountInfo(acct)
+		if candidate == nil {
+			continue
+		}
+		if anyCandidate == nil {
+			anyCandidate = candidate
+		}
+		if paidCandidate == nil && isPaidChatGPTPlanType(candidate.PlanType) {
+			paidCandidate = candidate
+		}
+		if defaultCandidate == nil && isDefaultChatGPTAccount(acct) {
+			defaultCandidate = candidate
+		}
+	}
+
+	switch {
+	case directOrgCandidate != nil && isPaidChatGPTPlanType(directOrgCandidate.PlanType):
+		return directOrgCandidate
+	case paidCandidate != nil:
+		return paidCandidate
+	case directOrgCandidate != nil:
+		return directOrgCandidate
+	case defaultCandidate != nil:
+		return defaultCandidate
+	default:
+		return anyCandidate
+	}
+}
+
+func buildChatGPTAccountInfo(acct map[string]any) *ChatGPTAccountInfo {
+	info := &ChatGPTAccountInfo{}
+	fillAccountInfo(info, acct)
+	if info.PlanType == "" {
+		return nil
+	}
 	return info
 }
 
@@ -205,19 +208,51 @@ func fillAccountInfo(info *ChatGPTAccountInfo, acct map[string]any) {
 	info.SubscriptionExpiresAt = extractEntitlementExpiresAt(acct)
 }
 
+func isDefaultChatGPTAccount(acct map[string]any) bool {
+	account, ok := acct["account"].(map[string]any)
+	if !ok {
+		return false
+	}
+	isDefault, _ := account["is_default"].(bool)
+	return isDefault
+}
+
+func isPaidChatGPTPlanType(planType string) bool {
+	return planType != "" && !strings.EqualFold(planType, "free")
+}
+
 // extractPlanType 从单个 account 对象中提取 plan_type
 func extractPlanType(acct map[string]any) string {
 	if account, ok := acct["account"].(map[string]any); ok {
 		if planType, ok := account["plan_type"].(string); ok && planType != "" {
-			return planType
+			return normalizeChatGPTPlanType(planType)
 		}
+	}
+	if planType, ok := acct["plan_type"].(string); ok && planType != "" {
+		return normalizeChatGPTPlanType(planType)
 	}
 	if entitlement, ok := acct["entitlement"].(map[string]any); ok {
 		if subPlan, ok := entitlement["subscription_plan"].(string); ok && subPlan != "" {
-			return subPlan
+			return normalizeChatGPTPlanType(subPlan)
 		}
 	}
 	return ""
+}
+
+func normalizeChatGPTPlanType(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "free":
+		return "free"
+	case "team", "chatgptteam", "chatgpt_team":
+		return "team"
+	case "plus", "chatgptplus", "chatgpt_plus":
+		return "plus"
+	case "pro", "chatgptpro", "chatgpt_pro":
+		return "pro"
+	default:
+		return normalized
+	}
 }
 
 // extractEntitlementExpiresAt 从 entitlement 中提取 expires_at。

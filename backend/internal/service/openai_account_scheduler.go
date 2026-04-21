@@ -454,6 +454,26 @@ func selectTopKOpenAICandidates(candidates []openAIAccountCandidateScore, topK i
 	return ranked
 }
 
+func filterOpenAICandidatesByMinPriority(candidates []openAIAccountCandidateScore) []openAIAccountCandidateScore {
+	if len(candidates) == 0 {
+		return candidates
+	}
+	minPriority := candidates[0].account.Priority
+	for _, candidate := range candidates[1:] {
+		if candidate.account.Priority < minPriority {
+			minPriority = candidate.account.Priority
+		}
+	}
+
+	result := make([]openAIAccountCandidateScore, 0, len(candidates))
+	for _, candidate := range candidates {
+		if candidate.account.Priority == minPriority {
+			result = append(result, candidate)
+		}
+	}
+	return result
+}
+
 type openAISelectionRNG struct {
 	state uint64
 }
@@ -623,28 +643,53 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 		}
 	}
 
-	minPriority, maxPriority := filtered[0].Priority, filtered[0].Priority
+	candidates := make([]openAIAccountCandidateScore, 0, len(filtered))
+	for _, account := range filtered {
+		fresh := s.service.resolveFreshSchedulableOpenAIAccount(ctx, account, req.RequestedModel)
+		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) {
+			continue
+		}
+		fresh = s.service.recheckSelectedOpenAIAccountFromDB(ctx, fresh, req.RequestedModel)
+		if fresh == nil || !s.isAccountTransportCompatible(fresh, req.RequiredTransport) {
+			continue
+		}
+		if req.ExcludedIDs != nil {
+			if _, excluded := req.ExcludedIDs[fresh.ID]; excluded {
+				continue
+			}
+		}
+
+		loadInfo := loadMap[fresh.ID]
+		if loadInfo == nil {
+			loadInfo = &AccountLoadInfo{AccountID: fresh.ID}
+		}
+		candidates = append(candidates, openAIAccountCandidateScore{
+			account:  fresh,
+			loadInfo: loadInfo,
+		})
+	}
+	candidates = filterOpenAICandidatesByMinPriority(candidates)
+	if len(candidates) == 0 {
+		return nil, 0, 0, 0, errors.New("no available OpenAI accounts")
+	}
+
+	minPriority, maxPriority := candidates[0].account.Priority, candidates[0].account.Priority
 	maxWaiting := 1
 	loadRateSum := 0.0
 	loadRateSumSquares := 0.0
 	minTTFT, maxTTFT := 0.0, 0.0
 	hasTTFTSample := false
-	candidates := make([]openAIAccountCandidateScore, 0, len(filtered))
-	for _, account := range filtered {
-		loadInfo := loadMap[account.ID]
-		if loadInfo == nil {
-			loadInfo = &AccountLoadInfo{AccountID: account.ID}
+	for _, item := range candidates {
+		if item.account.Priority < minPriority {
+			minPriority = item.account.Priority
 		}
-		if account.Priority < minPriority {
-			minPriority = account.Priority
+		if item.account.Priority > maxPriority {
+			maxPriority = item.account.Priority
 		}
-		if account.Priority > maxPriority {
-			maxPriority = account.Priority
+		if item.loadInfo.WaitingCount > maxWaiting {
+			maxWaiting = item.loadInfo.WaitingCount
 		}
-		if loadInfo.WaitingCount > maxWaiting {
-			maxWaiting = loadInfo.WaitingCount
-		}
-		errorRate, ttft, hasTTFT := s.stats.snapshot(account.ID)
+		errorRate, ttft, hasTTFT := s.stats.snapshot(item.account.ID)
 		if hasTTFT && ttft > 0 {
 			if !hasTTFTSample {
 				minTTFT, maxTTFT = ttft, ttft
@@ -658,16 +703,12 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 				}
 			}
 		}
-		loadRate := float64(loadInfo.LoadRate)
+		loadRate := float64(item.loadInfo.LoadRate)
 		loadRateSum += loadRate
 		loadRateSumSquares += loadRate * loadRate
-		candidates = append(candidates, openAIAccountCandidateScore{
-			account:   account,
-			loadInfo:  loadInfo,
-			errorRate: errorRate,
-			ttft:      ttft,
-			hasTTFT:   hasTTFT,
-		})
+		item.errorRate = errorRate
+		item.ttft = ttft
+		item.hasTTFT = hasTTFT
 	}
 	loadSkew := calcLoadSkewByMoments(loadRateSum, loadRateSumSquares, len(candidates))
 
