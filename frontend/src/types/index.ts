@@ -51,6 +51,7 @@ export interface UserAuthBindingStatus {
   bind_start_path?: string | null
   can_bind?: boolean
   can_unbind?: boolean
+  note_key?: string | null
   note?: string | null
   metadata?: Record<string, unknown>
 }
@@ -86,6 +87,7 @@ export interface User {
   role: 'admin' | 'user' // User role for authorization
   balance: number // User balance for API usage
   concurrency: number // Allowed concurrent requests
+  rpm_limit?: number // User-level RPM cap (0 = unlimited); effective as fallback when group has no rpm_limit
   status: 'active' | 'disabled' // Account status
   allowed_groups: number[] | null // Allowed group IDs (null = all non-exclusive groups)
   balance_notify_enabled: boolean
@@ -184,6 +186,9 @@ export interface PublicSettings {
   balance_low_notify_enabled: boolean
   account_quota_notify_enabled: boolean
   balance_low_notify_threshold: number
+  channel_monitor_enabled: boolean
+  channel_monitor_default_interval_seconds: number
+  available_channels_enabled: boolean
 }
 
 export interface AuthResponse {
@@ -452,6 +457,7 @@ export interface Group {
   description: string | null
   platform: GroupPlatform
   rate_multiplier: number
+  rpm_limit?: number // Group-level RPM cap (0 = unlimited); overrides user-level rpm_limit when set
   is_exclusive: boolean
   status: 'active' | 'inactive'
   subscription_type: SubscriptionType
@@ -474,15 +480,6 @@ export interface Group {
   require_privacy_set: boolean
   created_at: string
   updated_at: string
-}
-
-export interface AccountGroup {
-  account_id: number
-  group_id: number
-  priority: number
-  created_at: string
-  account?: Account
-  group?: Group
 }
 
 export interface AdminGroup extends Group {
@@ -768,7 +765,7 @@ export interface Account {
   proxy?: Proxy
   group_ids?: number[] // Groups this account belongs to
   groups?: Group[] // Preloaded group objects
-  account_groups?: AccountGroup[] // Preloaded account-group bindings
+  account_groups?: AccountGroup[] // Account-group bindings with per-group priority
 
   // Rate limit & scheduling fields
   schedulable: boolean
@@ -894,6 +891,15 @@ export interface AccountUsageInfo {
   error_code?: string
 
   error?: string            // usage 获取失败时的错误信息
+}
+
+export interface AccountGroup {
+  account_id: number
+  group_id: number
+  priority: number
+  created_at: string
+  account?: Account | null
+  group?: Group | null
 }
 
 // OpenAI Codex usage snapshot (from response headers)
@@ -1106,9 +1112,9 @@ export interface UsageLog {
 
   user?: User
   api_key?: ApiKey
-  account?: UsageLogAccountSummary
   group?: Group
   subscription?: UserSubscription
+  account?: UsageLogAccountSummary
 }
 
 export interface UsageLogAccountSummary {
@@ -1132,6 +1138,8 @@ export interface AdminUsageLog extends UsageLog {
   // 用户请求 IP（仅管理员可见）
   ip_address?: string | null
 
+  // 最小账号信息（仅管理员接口返回）
+  account?: UsageLogAccountSummary
 }
 
 export interface UsageCleanupFilters {

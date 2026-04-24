@@ -5,7 +5,6 @@ package server_test
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 	"math"
@@ -56,6 +55,7 @@ func TestAPIContracts(t *testing.T) {
 					"role": "user",
 					"balance": 12.5,
 					"concurrency": 5,
+					"rpm_limit": 0,
 					"status": "active",
 					"allowed_groups": null,
 					"created_at": "2025-01-02T03:04:05Z",
@@ -78,6 +78,7 @@ func TestAPIContracts(t *testing.T) {
 							"can_unbind": false,
 							"display_name": "alice@example.com",
 							"subject_hint": "a***e@example.com",
+							"note_key": "profile.authBindings.notes.emailManagedFromProfile",
 							"note": "Primary account email is managed from the profile form."
 						},
 						"linuxdo": {
@@ -115,6 +116,7 @@ func TestAPIContracts(t *testing.T) {
 							"can_unbind": false,
 							"display_name": "alice@example.com",
 							"subject_hint": "a***e@example.com",
+							"note_key": "profile.authBindings.notes.emailManagedFromProfile",
 							"note": "Primary account email is managed from the profile form."
 						},
 						"linuxdo": {
@@ -152,6 +154,7 @@ func TestAPIContracts(t *testing.T) {
 							"can_unbind": false,
 							"display_name": "alice@example.com",
 							"subject_hint": "a***e@example.com",
+							"note_key": "profile.authBindings.notes.emailManagedFromProfile",
 							"note": "Primary account email is managed from the profile form."
 						},
 						"linuxdo": {
@@ -331,6 +334,7 @@ func TestAPIContracts(t *testing.T) {
 						"fallback_group_id_on_invalid_request": null,
 						"require_oauth_only": false,
 						"require_privacy_set": false,
+						"rpm_limit": 0,
 						"created_at": "2025-01-02T03:04:05Z",
 						"updated_at": "2025-01-02T03:04:05Z"
 					}
@@ -711,6 +715,7 @@ func TestAPIContracts(t *testing.T) {
 					"force_email_on_third_party_signup": false,
 					"default_concurrency": 5,
 					"default_balance": 1.25,
+					"default_user_rpm_limit": 0,
 					"default_subscriptions": [],
 					"enable_model_fallback": false,
 					"fallback_model_anthropic": "claude-3-5-sonnet-20241022",
@@ -766,6 +771,9 @@ func TestAPIContracts(t *testing.T) {
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
+					"channel_monitor_enabled": true,
+					"channel_monitor_default_interval_seconds": 60,
+					"available_channels_enabled": false,
 					"wechat_connect_enabled": false,
 					"wechat_connect_app_id": "",
 					"wechat_connect_app_secret_configured": false,
@@ -887,6 +895,7 @@ func TestAPIContracts(t *testing.T) {
 					"custom_endpoints": [],
 					"default_concurrency": 0,
 					"default_balance": 0,
+					"default_user_rpm_limit": 0,
 					"default_subscriptions": [],
 					"enable_model_fallback": false,
 					"fallback_model_anthropic": "claude-3-5-sonnet-20241022",
@@ -937,6 +946,9 @@ func TestAPIContracts(t *testing.T) {
 					"balance_low_notify_threshold": 0,
 					"balance_low_notify_recharge_url": "",
 					"account_quota_notify_emails": [],
+					"channel_monitor_enabled": true,
+					"channel_monitor_default_interval_seconds": 60,
+					"available_channels_enabled": false,
 					"wechat_connect_enabled": true,
 					"wechat_connect_app_id": "wx-open-config",
 					"wechat_connect_app_secret_configured": true,
@@ -1017,47 +1029,12 @@ func TestAPIContracts(t *testing.T) {
 	}
 }
 
-func TestAdminAccountGroupPriorityContract(t *testing.T) {
-	deps := newContractDeps(t)
-	deps.groupRepo.SetActive([]service.Group{
-		{
-			ID:       27,
-			Name:     "priority-group",
-			Platform: service.PlatformAnthropic,
-			Status:   service.StatusActive,
-		},
-	})
-
-	status, body := doRequest(t, deps.router, http.MethodPut, "/api/v1/admin/accounts/3/group-priority", `{"group_id":27,"priority":4}`, map[string]string{
-		"Content-Type": "application/json",
-	})
-
-	require.Equal(t, http.StatusOK, status)
-	require.Equal(t, int64(3), deps.accountRepo.lastGroupPriorityUpdate.accountID)
-	require.Equal(t, int64(27), deps.accountRepo.lastGroupPriorityUpdate.groupID)
-	require.Equal(t, 4, deps.accountRepo.lastGroupPriorityUpdate.priority)
-
-	var resp map[string]any
-	require.NoError(t, json.Unmarshal([]byte(body), &resp))
-	require.Equal(t, float64(0), resp["code"])
-	data, ok := resp["data"].(map[string]any)
-	require.True(t, ok)
-	groups, ok := data["account_groups"].([]any)
-	require.True(t, ok)
-	require.Len(t, groups, 1)
-	binding, ok := groups[0].(map[string]any)
-	require.True(t, ok)
-	require.Equal(t, float64(27), binding["group_id"])
-	require.Equal(t, float64(4), binding["priority"])
-}
-
 type contractDeps struct {
 	now         time.Time
 	router      http.Handler
 	cfg         *config.Config
 	apiKeyRepo  *stubApiKeyRepo
 	groupRepo   *stubGroupRepo
-	accountRepo *stubAccountRepo
 	userSubRepo *stubUserSubscriptionRepo
 	usageRepo   *stubUsageLogRepo
 	settingRepo *stubSettingRepo
@@ -1117,7 +1094,7 @@ func newContractDeps(t *testing.T) *contractDeps {
 	settingRepo := newStubSettingRepo()
 	settingService := service.NewSettingService(settingRepo, cfg)
 
-	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	adminService := service.NewAdminService(userRepo, groupRepo, &accountRepo, proxyRepo, apiKeyRepo, redeemRepo, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	authHandler := handler.NewAuthHandler(cfg, nil, userService, settingService, nil, redeemService, nil)
 	apiKeyHandler := handler.NewAPIKeyHandler(apiKeyService)
 	usageHandler := handler.NewUsageHandler(usageService, apiKeyService)
@@ -1172,8 +1149,6 @@ func newContractDeps(t *testing.T) *contractDeps {
 	v1Admin.Use(adminAuth)
 	v1Admin.GET("/settings", adminSettingHandler.GetSettings)
 	v1Admin.POST("/accounts/bulk-update", adminAccountHandler.BulkUpdate)
-	v1Admin.POST("/accounts/batch-test", adminAccountHandler.BatchTest)
-	v1Admin.PUT("/accounts/:id/group-priority", adminAccountHandler.UpdateGroupPriority)
 
 	return &contractDeps{
 		now:         now,
@@ -1181,7 +1156,6 @@ func newContractDeps(t *testing.T) *contractDeps {
 		cfg:         cfg,
 		apiKeyRepo:  apiKeyRepo,
 		groupRepo:   groupRepo,
-		accountRepo: &accountRepo,
 		userSubRepo: userSubRepo,
 		usageRepo:   usageRepo,
 		settingRepo: settingRepo,
@@ -1387,18 +1361,12 @@ func (stubGroupRepo) Create(ctx context.Context, group *service.Group) error {
 	return errors.New("not implemented")
 }
 
-func (r *stubGroupRepo) GetByID(ctx context.Context, id int64) (*service.Group, error) {
-	for i := range r.active {
-		if r.active[i].ID == id {
-			clone := r.active[i]
-			return &clone, nil
-		}
-	}
+func (stubGroupRepo) GetByID(ctx context.Context, id int64) (*service.Group, error) {
 	return nil, service.ErrGroupNotFound
 }
 
-func (r *stubGroupRepo) GetByIDLite(ctx context.Context, id int64) (*service.Group, error) {
-	return r.GetByID(ctx, id)
+func (stubGroupRepo) GetByIDLite(ctx context.Context, id int64) (*service.Group, error) {
+	return nil, service.ErrGroupNotFound
 }
 
 func (stubGroupRepo) Update(ctx context.Context, group *service.Group) error {
@@ -1461,12 +1429,7 @@ func (stubGroupRepo) UpdateSortOrders(ctx context.Context, updates []service.Gro
 }
 
 type stubAccountRepo struct {
-	bulkUpdateIDs           []int64
-	lastGroupPriorityUpdate struct {
-		accountID int64
-		groupID   int64
-		priority  int
-	}
+	bulkUpdateIDs []int64
 }
 
 func (s *stubAccountRepo) Create(ctx context.Context, account *service.Account) error {
@@ -1505,7 +1468,7 @@ func (s *stubAccountRepo) List(ctx context.Context, params pagination.Pagination
 	return nil, nil, errors.New("not implemented")
 }
 
-func (s *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode, oauthPlanType string) ([]service.Account, *pagination.PaginationResult, error) {
+func (s *stubAccountRepo) ListWithFilters(ctx context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]service.Account, *pagination.PaginationResult, error) {
 	return nil, nil, errors.New("not implemented")
 }
 
@@ -1539,29 +1502,6 @@ func (s *stubAccountRepo) ClearError(ctx context.Context, id int64) error {
 
 func (s *stubAccountRepo) SetSchedulable(ctx context.Context, id int64, schedulable bool) error {
 	return errors.New("not implemented")
-}
-
-func (s *stubAccountRepo) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*service.Account, error) {
-	s.lastGroupPriorityUpdate.accountID = accountID
-	s.lastGroupPriorityUpdate.groupID = groupID
-	s.lastGroupPriorityUpdate.priority = priority
-
-	account := service.Account{
-		ID:       accountID,
-		Name:     "account",
-		Platform: service.PlatformAnthropic,
-		Type:     service.AccountTypeOAuth,
-		Status:   service.StatusActive,
-		AccountGroups: []service.AccountGroup{
-			{
-				AccountID: accountID,
-				GroupID:   groupID,
-				Priority:  priority,
-				CreatedAt: time.Date(2025, 1, 2, 3, 4, 5, 0, time.UTC),
-			},
-		},
-	}
-	return &account, nil
 }
 
 func (s *stubAccountRepo) AutoPauseExpiredAccounts(ctx context.Context, now time.Time) (int64, error) {

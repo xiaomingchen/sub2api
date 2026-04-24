@@ -10,33 +10,33 @@ import (
 )
 
 type stubAdminService struct {
-	users                   []service.User
-	apiKeys                 []service.APIKey
-	groups                  []service.Group
-	accounts                []service.Account
-	proxies                 []service.Proxy
-	proxyCounts             []service.ProxyWithAccountCount
-	redeems                 []service.RedeemCode
+	users                []service.User
+	apiKeys              []service.APIKey
+	groups               []service.Group
+	accounts             []service.Account
+	proxies              []service.Proxy
+	proxyCounts          []service.ProxyWithAccountCount
+	redeems              []service.RedeemCode
 	boundAuthIdentity    *service.AdminBindAuthIdentityInput
 	boundAuthIdentityFor int64
-	createdAccounts         []*service.CreateAccountInput
-	createdProxies          []*service.CreateProxyInput
-	updatedProxyIDs         []int64
-	updatedProxies          []*service.UpdateProxyInput
-	testedProxyIDs          []int64
-	createAccountErr        error
-	updateAccountErr        error
+	createdAccounts      []*service.CreateAccountInput
+	createdProxies       []*service.CreateProxyInput
+	updatedProxyIDs      []int64
+	updatedProxies       []*service.UpdateProxyInput
+	testedProxyIDs       []int64
+	createAccountErr     error
+	updateAccountErr     error
 	bulkUpdateAccountErr error
-	checkMixedErr           error
+	checkMixedErr        error
+	lastMixedCheck       struct {
+		accountID int64
+		platform  string
+		groupIDs  []int64
+	}
 	lastGroupPriorityUpdate struct {
 		accountID int64
 		groupID   int64
 		priority  int
-	}
-	lastMixedCheck struct {
-		accountID int64
-		platform  string
-		groupIDs  []int64
 	}
 	lastListAccounts struct {
 		platform      string
@@ -189,6 +189,17 @@ func (s *stubAdminService) GetUserUsageStats(ctx context.Context, userID int64, 
 	return map[string]any{"user_id": userID}, nil
 }
 
+func (s *stubAdminService) GetUserRPMStatus(ctx context.Context, userID int64) (*service.UserRPMStatus, error) {
+	user, err := s.GetUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return &service.UserRPMStatus{
+		UserRPMUsed:  0,
+		UserRPMLimit: user.RPMLimit,
+	}, nil
+}
+
 func (s *stubAdminService) BindUserAuthIdentity(ctx context.Context, userID int64, input service.AdminBindAuthIdentityInput) (*service.AdminBoundAuthIdentity, error) {
 	s.boundAuthIdentityFor = userID
 	copied := input
@@ -282,6 +293,14 @@ func (s *stubAdminService) BatchSetGroupRateMultipliers(_ context.Context, _ int
 	return nil
 }
 
+func (s *stubAdminService) ClearGroupRPMOverrides(_ context.Context, _ int64) error {
+	return nil
+}
+
+func (s *stubAdminService) BatchSetGroupRPMOverrides(_ context.Context, _ int64, _ []service.GroupRPMOverrideInput) error {
+	return nil
+}
+
 func (s *stubAdminService) ListAccounts(ctx context.Context, page, pageSize int, platform, accountType, status, search string, groupID int64, privacyMode, oauthPlanType string, sortBy, sortOrder string) ([]service.Account, int64, error) {
 	s.lastListAccounts.platform = platform
 	s.lastListAccounts.accountType = accountType
@@ -329,6 +348,28 @@ func (s *stubAdminService) UpdateAccount(ctx context.Context, id int64, input *s
 	return &account, nil
 }
 
+func (s *stubAdminService) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*service.Account, error) {
+	s.lastGroupPriorityUpdate.accountID = accountID
+	s.lastGroupPriorityUpdate.groupID = groupID
+	s.lastGroupPriorityUpdate.priority = priority
+	account := service.Account{
+		ID:       accountID,
+		Name:     "account",
+		Platform: service.PlatformAnthropic,
+		Type:     service.AccountTypeOAuth,
+		Status:   service.StatusActive,
+		AccountGroups: []service.AccountGroup{
+			{
+				AccountID: accountID,
+				GroupID:   groupID,
+				Priority:  priority,
+				CreatedAt: time.Now(),
+			},
+		},
+	}
+	return &account, nil
+}
+
 func (s *stubAdminService) DeleteAccount(ctx context.Context, id int64) error {
 	return nil
 }
@@ -349,28 +390,6 @@ func (s *stubAdminService) SetAccountError(ctx context.Context, id int64, errorM
 
 func (s *stubAdminService) SetAccountSchedulable(ctx context.Context, id int64, schedulable bool) (*service.Account, error) {
 	account := service.Account{ID: id, Name: "account", Status: service.StatusActive, Schedulable: schedulable}
-	return &account, nil
-}
-
-func (s *stubAdminService) UpdateAccountGroupPriority(ctx context.Context, accountID, groupID int64, priority int) (*service.Account, error) {
-	s.lastGroupPriorityUpdate.accountID = accountID
-	s.lastGroupPriorityUpdate.groupID = groupID
-	s.lastGroupPriorityUpdate.priority = priority
-	account := service.Account{
-		ID:       accountID,
-		Name:     "account",
-		Platform: service.PlatformAnthropic,
-		Type:     service.AccountTypeOAuth,
-		Status:   service.StatusActive,
-		AccountGroups: []service.AccountGroup{
-			{
-				AccountID: accountID,
-				GroupID:   groupID,
-				Priority:  priority,
-				CreatedAt: time.Now(),
-			},
-		},
-	}
 	return &account, nil
 }
 
