@@ -18,6 +18,7 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 	cache := NewSchedulerCache(rdb)
 
 	bucket := service.SchedulerBucket{GroupID: 2, Platform: service.PlatformGemini, Mode: service.SchedulerModeSingle}
+	proxyID := int64(99)
 	now := time.Now().UTC().Truncate(time.Second)
 	limitReset := now.Add(10 * time.Minute)
 	overloadUntil := now.Add(2 * time.Minute)
@@ -31,6 +32,17 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 		Type:        service.AccountTypeOAuth,
 		Status:      service.StatusActive,
 		Schedulable: true,
+		ProxyID:     &proxyID,
+		Proxy: &service.Proxy{
+			ID:       proxyID,
+			Name:     "scheduler-proxy",
+			Protocol: "http",
+			Host:     "proxy.example",
+			Port:     8080,
+			Username: "route-user",
+			Password: "route-pass",
+			Status:   service.StatusActive,
+		},
 		Concurrency: 3,
 		Priority:    7,
 		LastUsedAt:  &now,
@@ -73,6 +85,10 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 	require.NotEmpty(t, got.GetModelMapping())
 	require.Empty(t, got.GetCredential("access_token"))
 	require.Empty(t, got.GetCredential("huge_blob"))
+	require.Equal(t, account.ProxyID, got.ProxyID)
+	require.NotNil(t, got.Proxy)
+	require.Equal(t, account.Proxy.ID, got.Proxy.ID)
+	require.Equal(t, account.Proxy.URL(), got.Proxy.URL())
 	require.Equal(t, true, got.Extra["mixed_scheduling"])
 	require.Equal(t, 12.5, got.GetWindowCostLimit())
 	require.Equal(t, 8.0, got.GetWindowCostStickyReserve())
@@ -83,6 +99,10 @@ func TestSchedulerCacheSnapshotUsesSlimMetadataButKeepsFullAccount(t *testing.T)
 	full, err := cache.GetAccount(ctx, account.ID)
 	require.NoError(t, err)
 	require.NotNil(t, full)
+	require.Equal(t, account.ProxyID, full.ProxyID)
+	require.NotNil(t, full.Proxy)
+	require.Equal(t, account.Proxy.ID, full.Proxy.ID)
+	require.Equal(t, account.Proxy.URL(), full.Proxy.URL())
 	require.Equal(t, "secret-access-token", full.GetCredential("access_token"))
 	require.Equal(t, strings.Repeat("x", 4096), full.GetCredential("huge_blob"))
 }
