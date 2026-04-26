@@ -714,8 +714,18 @@ func (s *defaultOpenAIAccountScheduler) selectByLoadBalance(
 			return nil, 0, 0, 0, ErrNoAvailableCompactAccounts
 		}
 	}
+	candidates = filterOpenAICandidatesByMinPriority(candidates)
+	if len(candidates) == 0 {
+		if req.RequireCompact {
+			return nil, 0, 0, 0, ErrNoAvailableCompactAccounts
+		}
+		return nil, 0, 0, 0, noAvailableOpenAISelectionError(req.RequestedModel, false)
+	}
 
 	candidateCount := len(candidates)
+	if candidateCount == 0 && len(allCandidates) > 0 {
+		candidateCount = len(allCandidates)
+	}
 	loadSkew := 0.0
 	if len(candidates) > 0 {
 		minPriority, maxPriority := candidates[0].account.Priority, candidates[0].account.Priority

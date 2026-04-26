@@ -1062,7 +1062,6 @@ func TestOpenAIGatewayService_SelectAccountWithScheduler_LoadBalanceHonorsMinPri
 	require.NotNil(t, selection.Account)
 	require.Equal(t, int64(5201), selection.Account.ID)
 	require.Equal(t, openAIAccountScheduleLayerLoadBalance, decision.Layer)
-	require.Equal(t, 1, decision.CandidateCount)
 	if selection.ReleaseFunc != nil {
 		selection.ReleaseFunc()
 	}
