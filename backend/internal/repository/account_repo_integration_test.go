@@ -470,16 +470,16 @@ func (s *AccountRepoSuite) TestListWithFilters() {
 
 func (s *AccountRepoSuite) TestListByGroup() {
 	group := mustCreateGroup(s.T(), s.client, &service.Group{Name: "g-list"})
-	acc1 := mustCreateAccount(s.T(), s.client, &service.Account{Name: "a1", Status: service.StatusActive})
-	acc2 := mustCreateAccount(s.T(), s.client, &service.Account{Name: "a2", Status: service.StatusActive})
-	mustBindAccountToGroup(s.T(), s.client, acc1.ID, group.ID, 2)
-	mustBindAccountToGroup(s.T(), s.client, acc2.ID, group.ID, 1)
+	acc1 := mustCreateAccount(s.T(), s.client, &service.Account{Name: "a1", Status: service.StatusActive, Priority: 5})
+	acc2 := mustCreateAccount(s.T(), s.client, &service.Account{Name: "a2", Status: service.StatusActive, Priority: 1})
+	mustBindAccountToGroup(s.T(), s.client, acc1.ID, group.ID, 1)
+	mustBindAccountToGroup(s.T(), s.client, acc2.ID, group.ID, 9)
 
 	accounts, err := s.repo.ListByGroup(s.ctx, group.ID)
 	s.Require().NoError(err, "ListByGroup")
 	s.Require().Len(accounts, 2)
-	// Should be ordered by priority
-	s.Require().Equal(acc2.ID, accounts[0].ID, "expected acc2 first (priority=1)")
+	// Grouped account ordering should follow account priority, not binding priority.
+	s.Require().Equal(acc2.ID, accounts[0].ID, "expected acc2 first (account priority=1)")
 }
 
 func (s *AccountRepoSuite) TestListActive() {

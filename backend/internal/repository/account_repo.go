@@ -481,15 +481,11 @@ func (r *accountRepository) ListWithFilters(ctx context.Context, params paginati
 			q = q.Where(dbaccount.TypeEQ(service.AccountTypeOAuth))
 			q = q.Where(dbpredicate.Account(func(s *entsql.Selector) {
 				const planExpr = "LOWER(COALESCE(credentials->>'plan_type',''))"
-				preds := make([]*entsql.Predicate, 0, len(values))
+				clauses := make([]string, 0, len(values))
 				for _, value := range values {
-					preds = append(preds, entsql.ExprP(planExpr+" = ?", value))
+					clauses = append(clauses, planExpr+" = '"+value+"'")
 				}
-				if len(preds) == 1 {
-					s.Where(preds[0])
-					return
-				}
-				s.Where(entsql.Or(preds...))
+				s.Where(entsql.ExprP(strings.Join(clauses, " OR ")))
 			}))
 		}
 	}
