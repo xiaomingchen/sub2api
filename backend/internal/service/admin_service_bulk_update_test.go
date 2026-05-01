@@ -39,6 +39,7 @@ type accountRepoStubForBulkUpdate struct {
 		search      string
 		groupID     int64
 		privacyMode string
+		oauthPlan   string
 	}
 }
 
@@ -88,7 +89,7 @@ func (s *accountRepoStubForBulkUpdate) ListByGroup(_ context.Context, groupID in
 	return nil, nil
 }
 
-func (s *accountRepoStubForBulkUpdate) ListWithFilters(_ context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode string) ([]Account, *pagination.PaginationResult, error) {
+func (s *accountRepoStubForBulkUpdate) ListWithFilters(_ context.Context, params pagination.PaginationParams, platform, accountType, status, search string, groupID int64, privacyMode, oauthPlanType string) ([]Account, *pagination.PaginationResult, error) {
 	s.listCalled = true
 	s.lastListParams = params
 	s.lastListFilters.platform = platform
@@ -97,6 +98,7 @@ func (s *accountRepoStubForBulkUpdate) ListWithFilters(_ context.Context, params
 	s.lastListFilters.search = search
 	s.lastListFilters.groupID = groupID
 	s.lastListFilters.privacyMode = privacyMode
+	s.lastListFilters.oauthPlan = oauthPlanType
 	if s.listErr != nil {
 		return nil, nil, s.listErr
 	}
